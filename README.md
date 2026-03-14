@@ -20,4 +20,17 @@
 - Deep Learning Framework : PyTorch (예정)
 - Version Control : Git / GitHub
 
+---
 
+## Python 버전을 확인해 주세요
+```bash
+python --version
+```
+Python 3.12.10을 사용하는 것을 권장합니다.
+
+---
+
+## 필요한 패키지는 아래 명령어로 설치할 수 있습니다.
+```bash
+pip install -r requirements.txt
+```
