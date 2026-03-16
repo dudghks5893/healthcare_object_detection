@@ -24,7 +24,7 @@
 
 ## Python 버전을 확인해 주세요
 ```bash
-python3 --version
+python --version
 ```
 Python 3.12.10을 사용하는 것을 권장합니다.
 
