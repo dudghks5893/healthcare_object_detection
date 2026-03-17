@@ -60,7 +60,7 @@ from torchvision.ops import box_iou # IoU 평가 지표
 '''
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
-class PetClassificationDataset(Dataset):
+class PillClassificationDataset(Dataset):
     def __init__(self, file_list, image_dir, label_dict, transform=None):
         self.file_list = file_list
         self.image_dir = image_dir
