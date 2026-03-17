@@ -1,16 +1,4 @@
-import numpy as np
-import random
 import torch
-
-# seed 고정 함수
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    print(f"seed: {seed}로 고정 완료")
 
 # 디바이스 (GPU or CPU or MPS) 가져오는 함수
 def get_device():
