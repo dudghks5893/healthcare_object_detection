@@ -3,11 +3,20 @@ import pandas as pd
 import shutil
 
 """
+    실행 순서: 3
+
+    [역할]
+    Stage1 (객체 탐지) 학습을 위한 YOLO 형식 데이터셋을 생성하는 단계
+
+    [하는 일]
     1.train_annotations.csv, val_annotations.csv 읽음
     2.이미지별 bbox 묶음
-    3.YOLO 형식 txt 생성
-    4.원본 이미지 복사
-    5.data.yaml 생성
+    3.bbox를 YOLO 포맷 (x_center, y_center, w, h)으로 변환
+    4.이미지와 label(.txt) 파일 생성(YOLO 형식 txt)
+    5.원본 이미지 복사
+    6.data.yaml 생성
+    [결과]
+    data/processed/.../yolo_stage1/
 """
 
 TRAIN_CSV = Path("data/processed/train_annotations.csv")

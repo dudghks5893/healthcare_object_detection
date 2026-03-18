@@ -10,8 +10,22 @@ from ultralytics import YOLO
 from src.utils import get_device
 
 """
+    실행 순서: 8
+
     실행 방법:
     터미널에 python -m src.engine.predict_2stage 입력
+
+    [역할]
+    Stage1 Detector + Stage2 Classifier를 결합하여 최종 예측 결과를 생성하는 단계
+
+    [하는 일]
+    1. detector로 bbox 검출
+    2. bbox 영역 crop
+    3. classifier로 클래스 예측
+    4. 제출 형식 CSV 생성
+
+    [결과]
+    predict_2stage.csv (annotation_id, image_id, category_id, bbox, score)
 """
 
 # ===== 경로 설정 =====

@@ -2,8 +2,21 @@ from pathlib import Path
 import pandas as pd
 
 """
+    실행 순서: 6
+
     실행 방법:
     터미널에 python -m src.preprocessing.make_stage2_fulltrain_csv 입력
+
+    [역할]
+    Stage2 classifier 학습을 위해 train + val 데이터를 하나로 합치는 단계 (full-train)
+    임시 파일. 차 후 train/val 나눠서 성능 개선 들어 갈 시 필요 없어짐.
+
+    [하는 일]
+    - train / val crop metadata CSV 병합
+    - full-train 학습용 CSV 생성
+
+    [결과]
+    full_train_crop_labels.csv
 """
 
 TRAIN_CSV = Path("data/processed/stage2_classifier/metadata/train_crop_labels.csv")

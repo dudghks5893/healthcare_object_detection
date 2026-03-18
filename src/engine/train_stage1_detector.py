@@ -4,8 +4,20 @@ from src.utils import get_device
 from src.utils import set_seed
 
 """
+    실행 순서: 4
+    
     실행 방법:
     터미널에 python -m src.engine.train_stage1_detector 입력
+
+    [역할]
+    YOLO 기반 객체 탐지 모델(Stage1 Detector)을 학습하는 단계
+
+    [하는 일]
+    - YOLO 모델 로드 및 학습 수행
+    - bbox 검출 성능 학습
+
+    [결과]
+    best.pt / last.pt (detector weight)
 """
 
 DATA_YAML = Path("data/processed/yolo_stage1/data.yaml")

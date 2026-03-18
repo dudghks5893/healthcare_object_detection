@@ -3,15 +3,18 @@ from pathlib import Path
 import pandas as pd
 
 """
-    1.train_annotations 아래의 모든 json 탐색
-    2.각 json에서
-        * 이미지 파일명
-        * bbox
-        * class id
-        * class name
-    추출
-    3.전부 하나의 dataframe으로 합침
-    4.master_annotations.csv 저장
+    실행 순서: 1
+    
+    [역할]
+    COCO 형식의 annotation(json)을 읽어서 학습에 사용할 master CSV를 생성하는 단계
+
+    [하는 일]
+    - images / annotations / categories 정보 파싱
+    - bbox, class_id, file_name 등 필요한 정보 정리
+    - 하나의 통합 CSV (master_annotations.csv) 생성
+
+    [결과]
+    data/processed/.../master_annotations.csv
 """
 
 ANNOT_ROOT = Path("data/raw/train_annotations")

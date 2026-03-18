@@ -12,6 +12,21 @@ from src.utils.device import get_device
 from src.utils.seed import set_seed
 from src.datasets.stage2_dataset import PillCropDataset
 
+"""
+    실행 순서: 7
+
+    [역할]
+    crop 이미지를 기반으로 알약 종류를 분류하는 Stage2 classifier를 학습하는 단계
+
+    [하는 일]
+    - ResNet 기반 분류 모델 학습
+    - class_to_idx 매핑 생성
+    - full-train 데이터로 모델 학습
+
+    [결과]
+    best.pt / last.pt (classifier weight)
+    class_to_idx.json
+"""
 
 FULL_TRAIN_CSV = Path("data/processed/stage2_classifier/metadata/full_train_crop_labels.csv")
 SAVE_DIR = Path("outputs/stage2_classifier/resnet18_fulltrain")

@@ -2,6 +2,21 @@ from pathlib import Path
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
+"""
+    실행 순서: 2
+    
+    [역할]
+    master CSV를 기반으로 train / validation 데이터를 분리하는 단계
+
+    [하는 일]
+    - 이미지 단위로 데이터 분할 (데이터 누수 방지)
+    - train_annotations.csv / val_annotations.csv 생성
+
+    [결과]
+    data/processed/.../train_annotations.csv
+    data/processed/.../val_annotations.csv
+"""
+
 MASTER_CSV = Path("data/processed/master_annotations.csv")
 SAVE_DIR = Path("data/processed")
 RANDOM_STATE = 42

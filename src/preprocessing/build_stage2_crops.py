@@ -3,8 +3,21 @@ import pandas as pd
 from PIL import Image
 
 """
+    실행 순서: 5
+    
     실행 방법:
     터미널에 python -m src.preprocessing.build_stage2_crops 입력
+
+    [역할]
+    Stage2 (분류 모델)을 위한 crop 이미지 데이터를 생성하는 단계
+
+    [하는 일]
+    - annotation bbox 기준으로 이미지 crop
+    - 각 crop 이미지에 대한 class label 매핑
+    - classifier 학습용 metadata CSV 생성
+
+    [결과]
+    crop 이미지 + train_crop_labels.csv / val_crop_labels.csv
 """
 
 TRAIN_CSV = Path("data/processed/train_annotations.csv")
