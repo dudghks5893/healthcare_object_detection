@@ -635,8 +635,10 @@ $RECYCLE.BIN/
 
 # End of https://www.toptal.com/developers/gitignore/api/python,windows,macos,jupyternotebooks,linux,visualstudiocode,pycharm,virtualenv
 
-#datafile
+# GJ folder
 sprint_ai_project1_data/
+mini_project_dataset.v1-train_dataset_version2.yolov8/
+runs/
 yolo_dataset_all_train/
 
 # specific files
