@@ -637,7 +637,7 @@ $RECYCLE.BIN/
 
 #datafile
 sprint_ai_project1_data/
-yolo_dataset/
+yolo_dataset_all_train/
 
 # specific files
 last.pt

@@ -8,7 +8,7 @@ import wandb
 # 설정
 # =========================================
 MODEL_NAME = "yolov8n.pt"
-DATA_YAML = "yolo_dataset/data.yaml"
+DATA_YAML = "yolo_dataset_all_train/data.yaml"
 
 EPOCHS = 20
 IMG_SIZE = 640
