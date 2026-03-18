@@ -14,7 +14,7 @@ from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from torchvision.models.detection import ssd300_vgg16
 from torchvision.models import VGG16_Weights
 
-from dataset_class import (
+from src.datasets.dataset_class import (
     PillDetectionDataset,
     get_torchvision_train_transform,
     get_torchvision_valid_transform,

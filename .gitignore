@@ -28,7 +28,6 @@ MANIFEST
 
 # datasets
 data/
-datasets/
 
 # model weights
 *.pt
