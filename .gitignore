@@ -643,3 +643,4 @@ yolo_dataset_all_train/
 # specific files
 last.pt
 yolov8n.pt
+yolov8m.pt
