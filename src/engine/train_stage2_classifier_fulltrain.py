@@ -1,3 +1,5 @@
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
 from pathlib import Path
 import json
 
@@ -46,14 +48,14 @@ from src.models import ResNetClassifierModel
 """
 
 FULL_TRAIN_CSV = Path("data/processed/v1/stage2_classifier_crop_dataset/metadata/full_train_crop_labels.csv")
-SAVE_DIR = Path("checkpoints/v1/stage2_classifier/resnet18")
+SAVE_DIR = Path("checkpoints/v1/stage2_classifier/resnet34")
 
-MODEL_NAME = "resnet18"
-PRETRAINED = False
+MODEL_NAME = "resnet34"
+PRETRAINED = True
 
 IMG_SIZE = 224
 BATCH_SIZE = 32
-EPOCHS = 20
+EPOCHS = 1
 LR = 1e-3
 SEED = 42
 NUM_WORKERS = 4
