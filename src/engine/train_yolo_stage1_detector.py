@@ -21,7 +21,7 @@ from src.utils import set_seed
 
     [결과]
     checkpoints/v1/stage1_detector/
-    └── yolo11n/
+    └── yolo11s/
         ├── weights/
         │   ├── best.pt
         │   └── last.pt
@@ -42,7 +42,7 @@ def to_yolo_device(device):
     return "cpu"
 
 
-def upload_run_outputs(run, save_dir: Path):
+def upload_run_outputs(run, save_dir: Path, artifact_name: str):
     files_to_log = [
         save_dir / "results.csv",
         save_dir / "args.yaml",
@@ -60,7 +60,7 @@ def upload_run_outputs(run, save_dir: Path):
         if path.exists():
             run.save(str(path), policy="now")
 
-    artifact = wandb.Artifact("stage1-detector-v1-yolo11n", type="model")
+    artifact = wandb.Artifact(artifact_name, type="model")
 
     best_model = save_dir / "weights" / "best.pt"
     last_model = save_dir / "weights" / "last.pt"
@@ -76,15 +76,49 @@ def upload_run_outputs(run, save_dir: Path):
 
 def train_yolo_stage1_detector(
     data_yaml: Path = DATA_YAML,
-    model_name: str = "yolo11n.pt",
+    model_name: str = "yolo11s.pt",
     epochs: int = 20,
-    imgsz: int = 960,
+    imgsz: int = 768,
     batch: int = 8,
     seed: int = SEED,
     workers: int = 4,
-    patience: int = 15,
+    patience: int = 10,
     project_dir: Path = Path("checkpoints/v1/stage1_detector"),
-    run_name: str = "yolo11n",
+    run_name: str = "yolo11s",
+    val: bool = True,
+    pretrained: bool = True,
+
+    # optimizer / lr
+    optimizer: str | None = None,
+    lr0: float | None = None,
+    lrf: float | None = None,
+    weight_decay: float | None = None,
+    cos_lr: bool | None = None,
+    warmup_epochs: float | None = None,
+
+    # loss weight
+    box: float | None = None,
+    cls: float | None = None,
+    dfl: float | None = None,
+
+    # augmentation
+    hsv_h: float | None = None,
+    hsv_s: float | None = None,
+    hsv_v: float | None = None,
+    degrees: float | None = None,
+    translate: float | None = None,
+    scale: float | None = None,
+    fliplr: float | None = None,
+    flipud: float | None = None,
+    mosaic: float | None = None,
+    mixup: float | None = None,
+    copy_paste: float | None = None,
+
+    # 기타
+    save: bool | None = None,
+    verbose: bool | None = None,
+    plots: bool | None = None,
+    exist_ok: bool | None = None,
 ):
     set_seed(seed)
     device = get_device()
@@ -92,48 +126,122 @@ def train_yolo_stage1_detector(
 
     project_dir.mkdir(parents=True, exist_ok=True)
 
+    model_stem = Path(model_name).stem
+    stage_name = f"stage1_detector_{model_stem}_v1"
+    artifact_name = f"stage1-detector-v1-{model_stem}"
+
+    wandb_config = {
+        "stage": stage_name,
+        "model": model_name,
+        "data": str(data_yaml),
+        "epochs": epochs,
+        "imgsz": imgsz,
+        "batch": batch,
+        "seed": seed,
+        "workers": workers,
+        "patience": patience,
+        "device": yolo_device,
+        "save_dir": str(project_dir / run_name),
+        "val": val,
+        "pretrained": pretrained,
+    }
+
+    # 옵션 값이 있을 때만 wandb config에 기록
+    optional_wandb_items = {
+        "optimizer": optimizer,
+        "lr0": lr0,
+        "lrf": lrf,
+        "weight_decay": weight_decay,
+        "cos_lr": cos_lr,
+        "warmup_epochs": warmup_epochs,
+        "box": box,
+        "cls": cls,
+        "dfl": dfl,
+        "hsv_h": hsv_h,
+        "hsv_s": hsv_s,
+        "hsv_v": hsv_v,
+        "degrees": degrees,
+        "translate": translate,
+        "scale": scale,
+        "fliplr": fliplr,
+        "flipud": flipud,
+        "mosaic": mosaic,
+        "mixup": mixup,
+        "copy_paste": copy_paste,
+        "save": save,
+        "verbose": verbose,
+        "plots": plots,
+        "exist_ok": exist_ok,
+    }
+    wandb_config.update({k: v for k, v in optional_wandb_items.items() if v is not None})
+
     with wandb.init(
         project="test",
         name=f"stage1_{run_name}_v1",
         job_type="train",
-        config={
-            "stage": "yolo11n_stage1_detector_v1",
-            "model": model_name,
+        config=wandb_config,
+    ) as run:
+        model = YOLO(model_name)
+
+        # 필수 파라미터
+        train_kwargs = {
             "data": str(data_yaml),
             "epochs": epochs,
             "imgsz": imgsz,
             "batch": batch,
+            "device": yolo_device,
             "seed": seed,
             "workers": workers,
+            "project": str(Path(project_dir).resolve()),
+            "name": run_name,
+            "pretrained": pretrained,
             "patience": patience,
-            "device": yolo_device,
-            "save_dir": str(project_dir / run_name),
-        },
-    ) as run:
-        model = YOLO(model_name)
+            "val": val,
+        }
 
-        results = model.train(
-            data=str(data_yaml),
-            epochs=epochs,
-            imgsz=imgsz,
-            batch=batch,
-            device=yolo_device,
-            seed=seed,
-            workers=workers,
-            project=str(Path(project_dir).resolve()),
-            name=run_name,
-            pretrained=True,
-            patience=patience,
-            save=True,
-            verbose=True,
-            exist_ok=True,
-            plots=True,
-        )
+        # 선택 파라미터: yaml에 있을 때만 전달
+        optional_train_kwargs = {
+            # optimizer / lr
+            "optimizer": optimizer,
+            "lr0": lr0,
+            "lrf": lrf,
+            "weight_decay": weight_decay,
+            "cos_lr": cos_lr,
+            "warmup_epochs": warmup_epochs,
+
+            # loss weight
+            "box": box,
+            "cls": cls,
+            "dfl": dfl,
+
+            # augmentation
+            "hsv_h": hsv_h,
+            "hsv_s": hsv_s,
+            "hsv_v": hsv_v,
+            "degrees": degrees,
+            "translate": translate,
+            "scale": scale,
+            "fliplr": fliplr,
+            "flipud": flipud,
+            "mosaic": mosaic,
+            "mixup": mixup,
+            "copy_paste": copy_paste,
+
+            # 기타
+            "save": save,
+            "verbose": verbose,
+            "plots": plots,
+            "exist_ok": exist_ok,
+        }
+
+        train_kwargs.update({k: v for k, v in optional_train_kwargs.items() if v is not None})
+
+        results = model.train(**train_kwargs)
 
         save_dir = Path(results.save_dir)
         print(f"\nsave_dir: {save_dir}")
 
-        upload_run_outputs(run, save_dir)
+        upload_run_outputs(run, save_dir, artifact_name=artifact_name)
 
         best_path = save_dir / "weights" / "best.pt"
         last_path = save_dir / "weights" / "last.pt"
@@ -153,15 +261,45 @@ def train_yolo_stage1_detector(
 def main():
     output = train_yolo_stage1_detector(
         data_yaml=DATA_YAML,
-        model_name="yolo11n.pt",
+        model_name="yolo11s.pt",
         epochs=20,
-        imgsz=960,
+        imgsz=768,
         batch=8,
         seed=SEED,
         workers=4,
-        patience=15,
+        patience=10,
         project_dir=Path("checkpoints/v1/stage1_detector"),
-        run_name="yolo11n",
+        run_name="yolo11s",
+        val=True,
+        pretrained=True,
+
+        # 필요할 때만 사용
+        optimizer="AdamW",
+        lr0=0.001,
+        lrf=0.01,
+        weight_decay=0.0005,
+        cos_lr=True,
+        warmup_epochs=2.0,
+
+        # 예시: 아래는 안 넘기면 Ultralytics 기본값 사용
+        # box=7.5,
+        # cls=0.5,
+        # dfl=1.5,
+        # hsv_h=0.0,
+        # hsv_s=0.0,
+        # hsv_v=0.0,
+        # degrees=0.0,
+        # translate=0.0,
+        # scale=0.0,
+        # fliplr=0.0,
+        # flipud=0.0,
+        # mosaic=0.0,
+        # mixup=0.0,
+        # copy_paste=0.0,
+        # save=True,
+        # verbose=True,
+        # plots=True,
+        # exist_ok=True,
     )
 
     print("\n학습 완료")

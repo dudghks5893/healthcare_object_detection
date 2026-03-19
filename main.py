@@ -138,17 +138,54 @@ def step_3_build_yolo_stage1_dataset(cfg, paths):
 
 def step_4_train_stage1_detector(cfg, paths):
     print("\n[STEP 4] train_yolo_stage1_detector 시작")
+
+    stage1_cfg = cfg["stage1"]
+
     train_yolo_stage1_detector(
         data_yaml=paths["stage1_dataset_dir"] / "data.yaml",
-        model_name=cfg["stage1"]["model_name"],
-        epochs=cfg["stage1"]["epochs"],
-        imgsz=cfg["stage1"]["imgsz"],
-        batch=cfg["stage1"]["batch"],
+        model_name=stage1_cfg["model_name"],
+        epochs=stage1_cfg["epochs"],
+        imgsz=stage1_cfg["imgsz"],
+        batch=stage1_cfg["batch"],
         seed=cfg["seed"],
-        workers=cfg["stage1"]["workers"],
-        patience=cfg["stage1"]["patience"],
+        workers=stage1_cfg["workers"],
+        patience=stage1_cfg["patience"],
         project_dir=paths["stage1_checkpoint_dir"],
-        run_name=cfg["stage1"]["run_name"],
+        run_name=stage1_cfg["run_name"],
+        val=stage1_cfg.get("val", True),
+        pretrained=stage1_cfg.get("pretrained", True),
+
+        # optimizer / lr
+        optimizer=stage1_cfg.get("optimizer"),
+        lr0=stage1_cfg.get("lr0"),
+        lrf=stage1_cfg.get("lrf"),
+        weight_decay=stage1_cfg.get("weight_decay"),
+        cos_lr=stage1_cfg.get("cos_lr"),
+        warmup_epochs=stage1_cfg.get("warmup_epochs"),
+
+        # loss weight
+        box=stage1_cfg.get("box"),
+        cls=stage1_cfg.get("cls"),
+        dfl=stage1_cfg.get("dfl"),
+
+        # augmentation
+        hsv_h=stage1_cfg.get("hsv_h"),
+        hsv_s=stage1_cfg.get("hsv_s"),
+        hsv_v=stage1_cfg.get("hsv_v"),
+        degrees=stage1_cfg.get("degrees"),
+        translate=stage1_cfg.get("translate"),
+        scale=stage1_cfg.get("scale"),
+        fliplr=stage1_cfg.get("fliplr"),
+        flipud=stage1_cfg.get("flipud"),
+        mosaic=stage1_cfg.get("mosaic"),
+        mixup=stage1_cfg.get("mixup"),
+        copy_paste=stage1_cfg.get("copy_paste"),
+
+        # 기타
+        save=stage1_cfg.get("save"),
+        verbose=stage1_cfg.get("verbose"),
+        plots=stage1_cfg.get("plots"),
+        exist_ok=stage1_cfg.get("exist_ok"),
     )
     print("[STEP 4] 완료")
 
