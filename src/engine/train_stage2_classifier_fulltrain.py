@@ -15,6 +15,7 @@ from src.utils import (
     set_seed,
     build_class_mapping,
     save_class_mapping_json,
+    set_fine_tuning,
 )
 from src.datasets import PillCropDataset
 from src.models import ResNetClassifierModel
@@ -157,6 +158,9 @@ def train_stage2_classifier_fulltrain(
         model_name=model_name,
         pretrained=pretrained,
     ).to(device)
+
+    # fine-tuning 모드
+    set_fine_tuning(model, mode="full")
 
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
