@@ -1,13 +1,18 @@
 import json
 import random
+import pandas as pd
 from pathlib import Path
+import os
+from datetime import datetime
+from collections import Counter
 
 import kagglehub
 import torch
 import wandb
-
+from PIL import Image
+from torchvision.transforms import v2
+from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import MultiStepLR
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
@@ -20,6 +25,13 @@ from src.datasets.dataset_class import (
     get_torchvision_valid_transform,
     detection_collate_fn,
 )
+
+"""
+실행 방법:
+프로젝트 루트에서
+
+python -m src.models.normal_SSD
+"""
 
 
 def find_data_root(download_root: str):
@@ -60,7 +72,11 @@ def build_annotation_map(annotation_dir: Path):
 
 
 def build_file_list(image_dir: Path, annotation_map: dict):
-    image_paths = list(image_dir.glob("*.png")) + list(image_dir.glob("*.jpg")) + list(image_dir.glob("*.jpeg"))
+    image_paths = (
+        list(image_dir.glob("*.png")) +
+        list(image_dir.glob("*.jpg")) +
+        list(image_dir.glob("*.jpeg"))
+    )
     image_stems = {p.stem for p in image_paths}
     ann_stems = set(annotation_map.keys())
 
@@ -73,7 +89,13 @@ def build_file_list(image_dir: Path, annotation_map: dict):
 
 
 def build_class_mapping(annotation_map: dict):
-    class_names = set()
+    """
+    반환:
+    - class_to_idx: 모델 학습용 name -> internal index
+    - idx_to_class: internal index -> name
+    - name_to_original_id: name -> 원본 category_id
+    """
+    name_to_original_id = {}
 
     for _, json_path in annotation_map.items():
         with open(json_path, "r", encoding="utf-8") as f:
@@ -81,11 +103,16 @@ def build_class_mapping(annotation_map: dict):
 
         categories = data.get("categories", [])
         for cat in categories:
+            cat_id = cat.get("id")
             cat_name = cat.get("name")
-            if cat_name is not None:
-                class_names.add(cat_name)
 
-    class_names = sorted(class_names)
+            if cat_id is None or cat_name is None:
+                continue
+
+            if cat_name not in name_to_original_id:
+                name_to_original_id[cat_name] = cat_id
+
+    class_names = sorted(name_to_original_id.keys())
 
     if len(class_names) == 0:
         raise ValueError("class를 하나도 찾지 못했습니다. JSON 구조를 확인하세요.")
@@ -93,7 +120,27 @@ def build_class_mapping(annotation_map: dict):
     class_to_idx = {name: i + 1 for i, name in enumerate(class_names)}
     idx_to_class = {i: name for name, i in class_to_idx.items()}
 
-    return class_to_idx, idx_to_class
+    return class_to_idx, idx_to_class, name_to_original_id
+
+
+def inspect_train_distribution(train_files, annotation_map):
+    counter = Counter()
+
+    for file_name in train_files:
+        json_path = annotation_map[file_name]
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        cat_map = {c["id"]: c["name"] for c in data.get("categories", [])}
+
+        for ann in data.get("annotations", []):
+            cat_id = ann.get("category_id")
+            if cat_id in cat_map:
+                counter[cat_map[cat_id]] += 1
+
+    print("[INFO] train class distribution (top 20):")
+    for name, count in counter.most_common(20):
+        print(f"  {name}: {count}")
 
 
 def build_model(num_classes: int):
@@ -103,6 +150,136 @@ def build_model(num_classes: int):
         num_classes=num_classes,
     )
     return model
+
+
+class TestImageDataset(Dataset):
+    def __init__(self, file_list, image_dir, transform=None):
+        self.file_list = file_list
+        self.image_dir = image_dir
+        self.transform = transform or v2.Compose([
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
+        ])
+
+    def __len__(self):
+        return len(self.file_list)
+
+    def __getitem__(self, idx):
+        file_name = self.file_list[idx]
+
+        possible_paths = [
+            self.image_dir / f"{file_name}.png",
+            self.image_dir / f"{file_name}.jpg",
+            self.image_dir / f"{file_name}.jpeg",
+        ]
+
+        img_path = None
+        for path in possible_paths:
+            if path.exists():
+                img_path = path
+                break
+
+        if img_path is None:
+            raise FileNotFoundError(f"테스트 이미지 없음: {file_name}")
+
+        image = Image.open(img_path).convert("RGB")
+        image = self.transform(image)
+
+        return image, file_name
+
+
+def build_test_file_list(test_dir: Path):
+    image_paths = (
+        list(test_dir.glob("*.png")) +
+        list(test_dir.glob("*.jpg")) +
+        list(test_dir.glob("*.jpeg"))
+    )
+    return sorted([p.stem for p in image_paths])
+
+
+def test_collate_fn(batch):
+    images, file_names = zip(*batch)
+    return list(images), list(file_names)
+
+
+@torch.no_grad()
+def save_submission_csv(
+    model,
+    test_loader,
+    device,
+    csv_path,
+    idx_to_class,
+    name_to_original_id,
+    score_thr=0.5,
+):
+    model.eval()
+
+    rows = []
+    annotation_id = 1
+    debug_printed = False
+
+    for images, file_names in test_loader:
+        images = [img.to(device) for img in images]
+        preds = model(images)
+
+        for file_name, pred in zip(file_names, preds):
+            boxes = pred["boxes"].detach().cpu().tolist()
+            labels = pred["labels"].detach().cpu().tolist()
+            scores = pred["scores"].detach().cpu().tolist()
+
+            if not debug_printed:
+                print("[DEBUG] pred labels sample:", labels[:20])
+                print("[DEBUG] idx_to_class sample:", list(idx_to_class.items())[:10])
+                print("[DEBUG] name_to_original_id sample:", list(name_to_original_id.items())[:10])
+                debug_printed = True
+
+            try:
+                image_id = int(file_name)
+            except ValueError:
+                image_id = file_name
+
+            for box, label, score in zip(boxes, labels, scores):
+                if score < score_thr:
+                    continue
+
+                xmin, ymin, xmax, ymax = box
+                bbox_w = xmax - xmin
+                bbox_h = ymax - ymin
+
+                class_name = idx_to_class.get(int(label), None)
+                if class_name is None:
+                    continue
+
+                original_category_id = name_to_original_id.get(class_name, None)
+                if original_category_id is None:
+                    continue
+
+                rows.append({
+                    "annotation_id": annotation_id,
+                    "image_id": image_id,
+                    "category_id": int(original_category_id),
+                    "bbox_x": float(xmin),
+                    "bbox_y": float(ymin),
+                    "bbox_w": float(bbox_w),
+                    "bbox_h": float(bbox_h),
+                    "score": float(score),
+                })
+
+                annotation_id += 1
+
+    submission_df = pd.DataFrame(rows, columns=[
+        "annotation_id",
+        "image_id",
+        "category_id",
+        "bbox_x",
+        "bbox_y",
+        "bbox_w",
+        "bbox_h",
+        "score",
+    ])
+
+    submission_df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+    print(f"submission CSV 저장 완료: {csv_path}")
 
 
 def targets_to_wandb_boxes(target, idx_to_class):
@@ -176,8 +353,7 @@ def evaluate_map(model, valid_loader, device):
         preds = model(images)
         metric.update(preds, targets_gpu)
 
-    results = metric.compute()
-    return results
+    return metric.compute()
 
 
 @torch.no_grad()
@@ -242,10 +418,12 @@ def main():
 
     annotation_map = build_annotation_map(annotation_dir)
     file_list = build_file_list(image_dir, annotation_map)
-    class_to_idx, idx_to_class = build_class_mapping(annotation_map)
+    class_to_idx, idx_to_class, name_to_original_id = build_class_mapping(annotation_map)
 
     print("class_to_idx:", class_to_idx)
     print("num_classes(with background):", len(class_to_idx) + 1)
+    print("idx_to_class sample:", list(idx_to_class.items())[:10])
+    print("name_to_original_id sample:", list(name_to_original_id.items())[:10])
 
     train_files, valid_files = train_test_split(
         file_list,
@@ -253,6 +431,8 @@ def main():
         random_state=cfg.seed,
         shuffle=True,
     )
+
+    inspect_train_distribution(train_files, annotation_map)
 
     num_classes = len(class_to_idx) + 1
 
@@ -313,6 +493,7 @@ def main():
     )
 
     best_map50 = -1.0
+    history = []
     global_step = 0
 
     for epoch in range(cfg.epochs):
@@ -394,11 +575,59 @@ def main():
             wandb.save(str(best_ckpt))
 
         print(
-            f"[Epoch {epoch+1}/{cfg.epochs}] "
+            f"[Epoch {epoch + 1}/{cfg.epochs}] "
             f"train_loss={epoch_loss:.4f}, "
             f"val_map={val_map:.4f}, "
             f"val_map50={val_map50:.4f}"
         )
+
+        history.append({
+            "epoch": epoch + 1,
+            "train_loss": epoch_loss,
+            "val_map": val_map,
+            "val_map50": val_map50,
+            "val_mar100": val_mar100,
+            "lr": optimizer.param_groups[0]["lr"],
+        })
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    download_dir = Path.home() / "Downloads"
+
+    # 학습 기록 CSV 저장
+    history_df = pd.DataFrame(history)
+    history_csv_path = download_dir / f"training_history_{timestamp}.csv"
+    history_df.to_csv(history_csv_path, index=False, encoding="utf-8-sig")
+    print(f"학습 기록 CSV 저장 완료: {history_csv_path}")
+
+    # submission CSV 저장
+    test_files = build_test_file_list(test_dir)
+
+    test_dataset = TestImageDataset(
+        file_list=test_files,
+        image_dir=test_dir,
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=cfg.batch_size,
+        shuffle=False,
+        num_workers=0,
+        collate_fn=test_collate_fn,
+    )
+
+    submission_csv_path = download_dir / f"submission_{timestamp}.csv"
+
+    save_submission_csv(
+        model=model,
+        test_loader=test_loader,
+        device=device,
+        csv_path=submission_csv_path,
+        idx_to_class=idx_to_class,
+        name_to_original_id=name_to_original_id,
+        score_thr=0.5,
+    )
+
+    print(f"Submission 저장 완료: {submission_csv_path}")
 
     wandb.finish()
 
