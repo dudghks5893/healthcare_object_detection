@@ -8,7 +8,6 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import wandb
-import pandas as pd
 
 from src.utils import (
     get_device,
@@ -62,15 +61,46 @@ SEED = 42
 NUM_WORKERS = 4
 PIN_MEMORY = True
 
+# 증강 처리
 def build_transforms(img_size: int = 224):
     tf = transforms.Compose([
         transforms.Resize((img_size, img_size)),
+
+        # 1) 색/조명 변화 대응
+        transforms.ColorJitter(
+            brightness=0.08,
+            contrast=0.08,
+            saturation=0.03,
+            hue=0.0,
+        ),
+
+        # 2) 글자 선명도 변화 대응
+        transforms.RandomApply(
+            [transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 0.5))],
+            p=0.2,
+        ),
+
+        # 3) 위치/크기 변화만 아주 약하게
+        transforms.RandomAffine(
+            degrees=5,
+            translate=(0.02, 0.02),
+            scale=(0.98, 1.02),
+        ),
+
         transforms.ToTensor(),
         transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225]
         ),
     ])
+    # tf = transforms.Compose([
+    #     transforms.Resize((img_size, img_size)),
+    #     transforms.ToTensor(),
+    #     transforms.Normalize(
+    #         mean=[0.485, 0.456, 0.406],
+    #         std=[0.229, 0.224, 0.225]
+    #     ),
+    # ])
     return tf
 
 def build_dataloader(
