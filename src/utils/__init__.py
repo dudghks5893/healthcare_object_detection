@@ -4,6 +4,7 @@ from .seed import set_seed
 from .class_mapping import build_class_mapping, save_class_mapping_json, load_class_mapping_json
 from .config_loader import load_config
 from .resnet_fine_tuning_mode import set_fine_tuning
+from .calculate_map_metric import calculate_map_metric
 
 __all__ = [
     "EarlyStopping", 
@@ -14,4 +15,5 @@ __all__ = [
     "load_class_mapping_json", 
     "load_config",
     "set_fine_tuning",
+    "calculate_map_metric",
 ]
