@@ -1,6 +1,6 @@
 from pathlib import Path
-import wandb
-from ultralytics import YOLO
+import os
+from ultralytics import YOLO, settings
 
 from src.utils import get_device
 from src.utils import set_seed
@@ -42,36 +42,36 @@ def to_yolo_device(device):
     return "cpu"
 
 
-def upload_run_outputs(run, save_dir: Path, artifact_name: str):
-    files_to_log = [
-        save_dir / "results.csv",
-        save_dir / "args.yaml",
-        save_dir / "F1_curve.png",
-        save_dir / "P_curve.png",
-        save_dir / "R_curve.png",
-        save_dir / "PR_curve.png",
-        save_dir / "confusion_matrix.png",
-        save_dir / "confusion_matrix_normalized.png",
-        save_dir / "weights" / "best.pt",
-        save_dir / "weights" / "last.pt",
-    ]
+# def upload_run_outputs(run, save_dir: Path, artifact_name: str):
+#     files_to_log = [
+#         save_dir / "results.csv",
+#         save_dir / "args.yaml",
+#         save_dir / "F1_curve.png",
+#         save_dir / "P_curve.png",
+#         save_dir / "R_curve.png",
+#         save_dir / "PR_curve.png",
+#         save_dir / "confusion_matrix.png",
+#         save_dir / "confusion_matrix_normalized.png",
+#         save_dir / "weights" / "best.pt",
+#         save_dir / "weights" / "last.pt",
+#     ]
 
-    for path in files_to_log:
-        if path.exists():
-            run.save(str(path), policy="now")
+#     for path in files_to_log:
+#         if path.exists():
+#             run.save(str(path), policy="now")
 
-    artifact = wandb.Artifact(artifact_name, type="model")
+#     artifact = wandb.Artifact(artifact_name, type="model")
 
-    best_model = save_dir / "weights" / "best.pt"
-    last_model = save_dir / "weights" / "last.pt"
+#     best_model = save_dir / "weights" / "best.pt"
+#     last_model = save_dir / "weights" / "last.pt"
 
-    if best_model.exists():
-        artifact.add_file(str(best_model))
-    if last_model.exists():
-        artifact.add_file(str(last_model))
+#     if best_model.exists():
+#         artifact.add_file(str(best_model))
+#     if last_model.exists():
+#         artifact.add_file(str(last_model))
 
-    if len(artifact.manifest.entries) > 0:
-        run.log_artifact(artifact)
+#     if len(artifact.manifest.entries) > 0:
+#         run.log_artifact(artifact)
 
 
 def train_yolo_stage1_detector(
@@ -126,37 +126,49 @@ def train_yolo_stage1_detector(
 
     project_dir.mkdir(parents=True, exist_ok=True)
 
-    model_stem = Path(model_name).stem
-    stage_name = f"stage1_detector_{model_stem}_v1"
-    artifact_name = f"stage1-detector-v1-{model_stem}"
+    # W&B metric logging 활성화
+    """
+        Ultralytics 내부에서 자동으로 wandb run 생성
+        그래서 project 이름을 직접 못 넣음
+        대신 환경변수로 override 해야 함
+    """
+    settings.update({"wandb": True})        # Ultralytics에서 제공 wandb 설정
+    os.environ["WANDB_PROJECT"] = "test"    # project 이름
+    os.environ["WANDB_NAME"] = run_name     # run 이름
 
-    wandb_config = {
-        "stage": stage_name,
-        "model": model_name,
+    model = YOLO(model_name)
+    # 필수 파라미터
+    train_kwargs = {
         "data": str(data_yaml),
         "epochs": epochs,
         "imgsz": imgsz,
         "batch": batch,
+        "device": yolo_device,
         "seed": seed,
         "workers": workers,
-        "patience": patience,
-        "device": yolo_device,
-        "save_dir": str(project_dir / run_name),
-        "val": val,
+        "project": str(Path(project_dir).resolve()),
+        "name": run_name,
         "pretrained": pretrained,
+        "patience": patience,
+        "val": val,
     }
 
-    # 옵션 값이 있을 때만 wandb config에 기록
-    optional_wandb_items = {
+    # 선택 파라미터: 설정 하고 싶은 값만 설정해서 전달 가능.
+    optional_train_kwargs = {
+        # optimizer / lr
         "optimizer": optimizer,
         "lr0": lr0,
         "lrf": lrf,
         "weight_decay": weight_decay,
         "cos_lr": cos_lr,
         "warmup_epochs": warmup_epochs,
+
+        # loss weight
         "box": box,
         "cls": cls,
         "dfl": dfl,
+
+        # augmentation
         "hsv_h": hsv_h,
         "hsv_s": hsv_s,
         "hsv_v": hsv_v,
@@ -168,94 +180,30 @@ def train_yolo_stage1_detector(
         "mosaic": mosaic,
         "mixup": mixup,
         "copy_paste": copy_paste,
+
+        # 기타
         "save": save,
         "verbose": verbose,
         "plots": plots,
         "exist_ok": exist_ok,
     }
-    wandb_config.update({k: v for k, v in optional_wandb_items.items() if v is not None})
 
-    with wandb.init(
-        project="test",
-        name=f"stage1_{run_name}_v1",
-        job_type="train",
-        config=wandb_config,
-    ) as run:
-        model = YOLO(model_name)
+    train_kwargs.update({k: v for k, v in optional_train_kwargs.items() if v is not None})
 
-        # 필수 파라미터
-        train_kwargs = {
-            "data": str(data_yaml),
-            "epochs": epochs,
-            "imgsz": imgsz,
-            "batch": batch,
-            "device": yolo_device,
-            "seed": seed,
-            "workers": workers,
-            "project": str(Path(project_dir).resolve()),
-            "name": run_name,
-            "pretrained": pretrained,
-            "patience": patience,
-            "val": val,
-        }
+    results = model.train(**train_kwargs)
 
-        # 선택 파라미터: yaml에 있을 때만 전달
-        optional_train_kwargs = {
-            # optimizer / lr
-            "optimizer": optimizer,
-            "lr0": lr0,
-            "lrf": lrf,
-            "weight_decay": weight_decay,
-            "cos_lr": cos_lr,
-            "warmup_epochs": warmup_epochs,
+    save_dir = Path(results.save_dir)
+    best_path = save_dir / "weights" / "best.pt"
+    last_path = save_dir / "weights" / "last.pt"
 
-            # loss weight
-            "box": box,
-            "cls": cls,
-            "dfl": dfl,
+    print(f"\nsave_dir: {save_dir}")
 
-            # augmentation
-            "hsv_h": hsv_h,
-            "hsv_s": hsv_s,
-            "hsv_v": hsv_v,
-            "degrees": degrees,
-            "translate": translate,
-            "scale": scale,
-            "fliplr": fliplr,
-            "flipud": flipud,
-            "mosaic": mosaic,
-            "mixup": mixup,
-            "copy_paste": copy_paste,
-
-            # 기타
-            "save": save,
-            "verbose": verbose,
-            "plots": plots,
-            "exist_ok": exist_ok,
-        }
-
-        train_kwargs.update({k: v for k, v in optional_train_kwargs.items() if v is not None})
-
-        results = model.train(**train_kwargs)
-
-        save_dir = Path(results.save_dir)
-        print(f"\nsave_dir: {save_dir}")
-
-        upload_run_outputs(run, save_dir, artifact_name=artifact_name)
-
-        best_path = save_dir / "weights" / "best.pt"
-        last_path = save_dir / "weights" / "last.pt"
-
-        run.summary["save_dir"] = str(save_dir)
-        run.summary["best_model_path"] = str(best_path)
-        run.summary["last_model_path"] = str(last_path)
-
-        return {
-            "results": results,
-            "save_dir": save_dir,
-            "best_path": best_path,
-            "last_path": last_path,
-        }
+    return {
+        "results": results,
+        "save_dir": save_dir,
+        "best_path": best_path,
+        "last_path": last_path,
+    }
 
 
 def main():
