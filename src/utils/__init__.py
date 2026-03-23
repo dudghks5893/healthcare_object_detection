@@ -5,6 +5,7 @@ from .class_mapping import build_class_mapping, save_class_mapping_json, load_cl
 from .config_loader import load_config
 from .resnet_fine_tuning_mode import set_fine_tuning
 from .calculate_map_metric import calculate_map_metric
+from .calculate_classification_acc import calculate_classification_acc
 
 __all__ = [
     "EarlyStopping", 
@@ -16,4 +17,5 @@ __all__ = [
     "load_config",
     "set_fine_tuning",
     "calculate_map_metric",
+    "calculate_classification_acc",
 ]
