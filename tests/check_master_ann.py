@@ -58,7 +58,7 @@ def check_master_ann(
     print("\n==== 클레스 종류333 ====")
     # print(df[["class_name", "class_id"]].drop_duplicates())
     print(df[["class_name", "class_id"]].drop_duplicates().count())
-
+    
     return result_df
 
 

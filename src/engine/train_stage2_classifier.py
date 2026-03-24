@@ -1,82 +1,188 @@
 from pathlib import Path
-import copy
+import json
+import random
 
+import pandas as pd
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
-from torchvision import datasets, models, transforms
 import wandb
 
-from src.utils.device import get_device
-from src.utils.seed import set_seed
+from PIL import Image
+from torch.utils.data import DataLoader
+from torchvision import transforms
+from torchvision.utils import save_image
+
+from src.datasets import PillCropDataset
+from src.datasets.stage2_classifier_transforms import (
+    build_stage2_transforms,
+    build_stage2_preview_transform,
+)
+from src.models import ResNetClassifierModel
+from src.utils import (
+    build_class_mapping,
+    get_device,
+    save_class_mapping_json,
+    set_fine_tuning,
+    set_seed,
+    EarlyStopping,
+)
+
 
 """
-    실행 방법:
-    터미널에 python -m src.engine.train_stage2_classifier 입력
+    실행 순서: stage2
+    직접 실행:
+    python -m src.engine.train_stage2_classifier
+
+    [역할]
+    Stage2 분류 모델을 train / val 분리 방식으로 학습하는 공용 엔진
+
+    [지원]
+    - v1 / v2 공용
+    - yaml에서 train_csv, val_csv만 바꿔서 재사용 가능
+
+    [하는 일]
+    - train / val crop metadata csv 읽기
+    - class_to_idx / idx_to_class 생성
+    - train / val dataloader 생성
+    - ResNet 기반 분류 모델 학습
+    - train / val loss, acc 기록
+    - best.pt 저장 (val_loss 기준)
+    - class mapping / hparams 저장
+    - 선택적으로 augmentation preview 저장
 """
 
-TRAIN_DIR = Path("data/processed/stage2_classifier/train")
-VAL_DIR = Path("data/processed/stage2_classifier/val")
-SAVE_DIR = Path("outputs/stage2_classifier/resnet18_baseline")
+
+TRAIN_CSV = Path("data/processed/v2/stage2_classifier_crop_dataset/metadata/train_crop_labels.csv")
+VAL_CSV = Path("data/processed/v2/stage2_classifier_crop_dataset/metadata/val_crop_labels.csv")
+SAVE_DIR = Path("checkpoints/v2/stage2_classifier/resnet50")
+
+MODEL_NAME = "resnet50"
+PRETRAINED = True
 
 IMG_SIZE = 224
 BATCH_SIZE = 32
 EPOCHS = 20
-LR = 1e-3
+LR = 1e-4
 SEED = 42
+NUM_WORKERS = 4
+PIN_MEMORY = True
 
 
-def build_transforms(img_size=224):
-    train_tf = transforms.Compose([
-        transforms.Resize((img_size, img_size)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225]),
-    ])
-
-    val_tf = transforms.Compose([
-        transforms.Resize((img_size, img_size)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225]),
-    ])
-    return train_tf, val_tf
+def save_json(data, path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def build_dataloaders(train_dir, val_dir, batch_size, img_size):
-    train_tf, val_tf = build_transforms(img_size)
-
-    train_ds = datasets.ImageFolder(train_dir, transform=train_tf)
-    val_ds = datasets.ImageFolder(val_dir, transform=val_tf)
-
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=4,
-        pin_memory=True,
-    )
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True,
+def find_image_path_column(df: pd.DataFrame):
+    candidates = ["crop_path", "image_path", "img_path", "file_path"]
+    for col in candidates:
+        if col in df.columns:
+            return col
+    raise ValueError(
+        "이미지 경로 컬럼을 찾지 못했습니다. "
+        "가능 후보: crop_path, image_path, img_path, file_path"
     )
 
-    return train_ds, val_ds, train_loader, val_loader
+
+def save_augmentation_preview(
+    csv_path: Path,
+    save_dir: Path,
+    img_size: int = 224,
+    augmentation: dict | None = None,
+    aug_preview: dict | None = None,
+    seed: int = 42,
+):
+    if not aug_preview or not aug_preview.get("enabled", False):
+        return
+
+    num_samples = aug_preview.get("num_samples", 12)
+    log_to_wandb = aug_preview.get("log_to_wandb", False)
+
+    df = pd.read_csv(csv_path, encoding="utf-8-sig")
+    if df.empty:
+        print("[경고] aug preview용 csv가 비어 있습니다.")
+        return
+
+    path_col = find_image_path_column(df)
+
+    random.seed(seed)
+    indices = random.sample(range(len(df)), k=min(num_samples, len(df)))
+
+    save_dir.mkdir(parents=True, exist_ok=True)
+    preview_tf = build_stage2_preview_transform(
+        img_size=img_size,
+        augmentation=augmentation,
+    )
+
+    wandb_images = []
+
+    for i, idx in enumerate(indices, start=1):
+        row = df.iloc[idx]
+        img_path = Path(row[path_col])
+
+        if not img_path.exists():
+            print(f"[스킵] preview 이미지 없음: {img_path}")
+            continue
+
+        img = Image.open(img_path).convert("RGB")
+
+        orig_img = transforms.Resize((img_size, img_size))(img)
+        orig_tensor = transforms.ToTensor()(orig_img)
+        save_image(orig_tensor, save_dir / f"{i:02d}_orig.png")
+
+        aug_tensor = preview_tf(img)
+        aug_path = save_dir / f"{i:02d}_aug.png"
+        save_image(aug_tensor, aug_path)
+
+        if log_to_wandb and wandb.run is not None:
+            wandb_images.append(
+                wandb.Image(str(aug_path), caption=f"sample_{i:02d}")
+            )
+
+    if log_to_wandb and wandb_images and wandb.run is not None:
+        wandb.log({"stage2/aug_preview": wandb_images})
 
 
-def build_model(num_classes):
-    # weights = models.ResNet18_Weights.DEFAULT
-    # model = models.resnet18(weights=weights)
-    model = models.resnet18(weights=None)
-    model.fc = nn.Linear(model.fc.in_features, num_classes)
-    return model
+def build_dataloader(
+    csv_path: Path,
+    class_to_idx: dict,
+    batch_size: int,
+    img_size: int,
+    train: bool = True,
+    num_workers: int = 4,
+    pin_memory: bool = True,
+    augmentation: dict | None = None,
+):
+    tf = build_stage2_transforms(
+        img_size=img_size,
+        train=train,
+        augmentation=augmentation,
+    )
+
+    dataset = PillCropDataset(
+        csv_path=csv_path,
+        class_to_idx=class_to_idx,
+        transform=tf,
+    )
+
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=train,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
+
+    return dataset, loader
 
 
-def train_one_epoch(model, loader, criterion, optimizer, device):
-    model.train()
+def run_one_epoch(model, loader, criterion, optimizer, device, train: bool = True):
+    if train:
+        model.train()
+    else:
+        model.eval()
+
     running_loss = 0.0
     correct = 0
     total = 0
@@ -85,11 +191,16 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
         images = images.to(device)
         targets = targets.to(device)
 
-        optimizer.zero_grad()
-        logits = model(images)
-        loss = criterion(logits, targets)
-        loss.backward()
-        optimizer.step()
+        if train:
+            optimizer.zero_grad()
+
+        with torch.set_grad_enabled(train):
+            logits = model(images)
+            loss = criterion(logits, targets)
+
+            if train:
+                loss.backward()
+                optimizer.step()
 
         running_loss += loss.item() * images.size(0)
         preds = logits.argmax(dim=1)
@@ -101,118 +212,237 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
     return epoch_loss, epoch_acc
 
 
-@torch.no_grad()
-def validate(model, loader, criterion, device):
-    model.eval()
-    running_loss = 0.0
-    correct = 0
-    total = 0
+def train_stage2_classifier(
+    train_csv: Path = TRAIN_CSV,
+    val_csv: Path = VAL_CSV,
+    save_dir: Path = SAVE_DIR,
+    model_name: str = MODEL_NAME,
+    pretrained: bool = PRETRAINED,
+    img_size: int = IMG_SIZE,
+    batch_size: int = BATCH_SIZE,
+    epochs: int = EPOCHS,
+    lr: float = LR,
+    seed: int = SEED,
+    num_workers: int = NUM_WORKERS,
+    pin_memory: bool = PIN_MEMORY,
+    augmentation: dict | None = None,
+    aug_preview: dict | None = None,
+):
+    set_seed(seed)
+    device = get_device()
+    save_dir.mkdir(parents=True, exist_ok=True)
 
-    for images, targets in loader:
-        images = images.to(device)
-        targets = targets.to(device)
+    if not train_csv.exists():
+        raise FileNotFoundError(f"train csv가 없습니다: {train_csv}")
+    if not val_csv.exists():
+        raise FileNotFoundError(f"val csv가 없습니다: {val_csv}")
 
-        logits = model(images)
-        loss = criterion(logits, targets)
+    class_to_idx, idx_to_class = build_class_mapping(train_csv)
 
-        running_loss += loss.item() * images.size(0)
-        preds = logits.argmax(dim=1)
-        correct += (preds == targets).sum().item()
-        total += targets.size(0)
+    train_dataset, train_loader = build_dataloader(
+        csv_path=train_csv,
+        class_to_idx=class_to_idx,
+        batch_size=batch_size,
+        img_size=img_size,
+        train=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        augmentation=augmentation,
+    )
 
-    epoch_loss = running_loss / total
-    epoch_acc = correct / total
-    return epoch_loss, epoch_acc
+    val_dataset, val_loader = build_dataloader(
+        csv_path=val_csv,
+        class_to_idx=class_to_idx,
+        batch_size=batch_size,
+        img_size=img_size,
+        train=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        augmentation=augmentation,
+    )
+
+    num_classes = len(class_to_idx)
+
+    model = ResNetClassifierModel(
+        num_classes=num_classes,
+        model_name=model_name,
+        pretrained=pretrained,
+    ).to(device)
+
+    set_fine_tuning(model, mode="full")
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+
+    hparams = {
+        "mode": "stage2_val_split",
+        "model_name": model_name,
+        "pretrained": pretrained,
+        "img_size": img_size,
+        "batch_size": batch_size,
+        "epochs": epochs,
+        "lr": lr,
+        "num_classes": num_classes,
+        "seed": seed,
+        "num_workers": num_workers,
+        "pin_memory": pin_memory,
+        "train_csv": str(train_csv),
+        "val_csv": str(val_csv),
+        "save_dir": str(save_dir),
+        "augmentation": augmentation,
+        "aug_preview": aug_preview,
+    }
+
+    print("num_classes:", num_classes)
+    print("train samples:", len(train_dataset))
+    print("val samples:", len(val_dataset))
+    print("save_dir:", save_dir)
+
+    early_stopping = EarlyStopping(patience=10, min_delta=0.003, mode="min")
+
+    with wandb.init(
+        project="test",
+        name=f"stage2_{model_name}",
+        config=hparams,
+    ) as run:
+        preview_save_dir = save_dir / "aug_preview"
+        save_augmentation_preview(
+            csv_path=train_csv,
+            save_dir=preview_save_dir,
+            img_size=img_size,
+            augmentation=augmentation,
+            aug_preview=aug_preview,
+            seed=seed,
+        )
+
+        best_val_loss = float("inf")
+        best_state = None
+
+        for epoch in range(1, epochs + 1):
+            train_loss, train_acc = run_one_epoch(
+                model=model,
+                loader=train_loader,
+                criterion=criterion,
+                optimizer=optimizer,
+                device=device,
+                train=True,
+            )
+
+            val_loss, val_acc = run_one_epoch(
+                model=model,
+                loader=val_loader,
+                criterion=criterion,
+                optimizer=optimizer,
+                device=device,
+                train=False,
+            )
+
+            print(
+                f"[Epoch {epoch:02d}/{epochs}] "
+                f"train_loss={train_loss:.4f} train_acc={train_acc:.4f} "
+                f"val_loss={val_loss:.4f} val_acc={val_acc:.4f}"
+            )
+
+            early_stopping(val_loss)
+
+            if early_stopping.stop:
+                print("더이상 학습 개선 진행 불가로 epoch 종료!")
+                break
+
+            wandb.log({
+                "epoch": epoch,
+                "train/loss": train_loss,
+                "train/acc": train_acc,
+                "val/loss": val_loss,
+                "val/acc": val_acc,
+                "lr": optimizer.param_groups[0]["lr"],
+            })
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_state = {k: v.cpu() for k, v in model.state_dict().items()}
+
+        if best_state is None:
+            best_state = {k: v.cpu() for k, v in model.state_dict().items()}
+
+        best_path = save_dir / "best.pt"
+        last_path = save_dir / "last.pt"
+        hparams_path = save_dir / "hparams.json"
+
+        torch.save({
+            "model_state_dict": best_state,
+            "class_to_idx": class_to_idx,
+            "idx_to_class": idx_to_class,
+            "num_classes": num_classes,
+            "img_size": img_size,
+            "model_name": model_name,
+            "pretrained": pretrained,
+        }, best_path)
+
+        torch.save({
+            "model_state_dict": model.state_dict(),
+            "class_to_idx": class_to_idx,
+            "idx_to_class": idx_to_class,
+            "num_classes": num_classes,
+            "img_size": img_size,
+            "model_name": model_name,
+            "pretrained": pretrained,
+        }, last_path)
+
+        class_to_idx_path, idx_to_class_path = save_class_mapping_json(
+            class_to_idx=class_to_idx,
+            idx_to_class=idx_to_class,
+            save_dir=save_dir,
+        )
+
+        save_json(hparams, hparams_path)
+
+        run.summary["best_val_loss"] = best_val_loss
+        run.summary["best_model_path"] = str(best_path)
+        run.summary["last_model_path"] = str(last_path)
+        run.summary["class_to_idx_path"] = str(class_to_idx_path)
+        run.summary["idx_to_class_path"] = str(idx_to_class_path)
+        run.summary["hparams_path"] = str(hparams_path)
+
+        print(f"\nBest val loss: {best_val_loss:.4f}")
+        print(f"Saved best model to: {best_path}")
+        print(f"Saved last model to: {last_path}")
+        print(f"Saved class_to_idx to: {class_to_idx_path}")
+        print(f"Saved idx_to_class to: {idx_to_class_path}")
+        print(f"Saved hparams to: {hparams_path}")
+
+        return {
+            "best_path": best_path,
+            "last_path": last_path,
+            "class_to_idx_path": class_to_idx_path,
+            "idx_to_class_path": idx_to_class_path,
+            "hparams_path": hparams_path,
+            "best_val_loss": best_val_loss,
+        }
 
 
 def main():
-    set_seed(SEED)
-    device = get_device()
-    SAVE_DIR.mkdir(parents=True, exist_ok=True)
-
-    train_ds, val_ds, train_loader, val_loader = build_dataloaders(
-        TRAIN_DIR, VAL_DIR, BATCH_SIZE, IMG_SIZE
+    output = train_stage2_classifier(
+        train_csv=TRAIN_CSV,
+        val_csv=VAL_CSV,
+        save_dir=SAVE_DIR,
+        model_name=MODEL_NAME,
+        pretrained=PRETRAINED,
+        img_size=IMG_SIZE,
+        batch_size=BATCH_SIZE,
+        epochs=EPOCHS,
+        lr=LR,
+        seed=SEED,
+        num_workers=NUM_WORKERS,
+        pin_memory=PIN_MEMORY,
+        augmentation=None,
+        aug_preview=None,
     )
 
-    num_classes = len(train_ds.classes)
-    model = build_model(num_classes).to(device)
-
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-
-    class_to_idx = train_ds.class_to_idx
-    idx_to_class = {v: k for k, v in class_to_idx.items()}
-
-    print("train class_to_idx:", train_ds.class_to_idx)
-    print("val class_to_idx:", val_ds.class_to_idx)
-    print("same mapping?", train_ds.class_to_idx == val_ds.class_to_idx)
-    print("train num classes:", len(train_ds.classes))
-    print("val num classes:", len(val_ds.classes))
-    print("train classes:", train_ds.classes[:10])
-    print("val classes:", val_ds.classes[:10])
-
-    # with wandb.init(
-    #     project="test",
-    #     name="stage2_resnet18_baseline",
-    #     config={
-    #         "model": "resnet18",
-    #         "img_size": IMG_SIZE,
-    #         "batch_size": BATCH_SIZE,
-    #         "epochs": EPOCHS,
-    #         "lr": LR,
-    #         "num_classes": num_classes,
-    #         "seed": SEED,
-    #     },
-    # ) as run:
-    #     best_val_acc = 0.0
-    #     best_state = None
-
-    #     for epoch in range(1, EPOCHS + 1):
-    #         train_loss, train_acc = train_one_epoch(
-    #             model, train_loader, criterion, optimizer, device
-    #         )
-    #         val_loss, val_acc = validate(
-    #             model, val_loader, criterion, device
-    #         )
-
-    #         print(
-    #             f"[Epoch {epoch:02d}/{EPOCHS}] "
-    #             f"train_loss={train_loss:.4f} train_acc={train_acc:.4f} "
-    #             f"val_loss={val_loss:.4f} val_acc={val_acc:.4f}"
-    #         )
-
-    #         wandb.log({
-    #             "epoch": epoch,
-    #             "train/loss": train_loss,
-    #             "train/acc": train_acc,
-    #             "val/loss": val_loss,
-    #             "val/acc": val_acc,
-    #             "lr": optimizer.param_groups[0]["lr"],
-    #         })
-
-    #         if val_acc > best_val_acc:
-    #             best_val_acc = val_acc
-    #             best_state = copy.deepcopy(model.state_dict())
-
-    #     # best 저장
-    #     best_path = SAVE_DIR / "best.pt"
-    #     torch.save({
-    #         "model_state_dict": best_state,
-    #         "class_to_idx": class_to_idx,
-    #         "idx_to_class": idx_to_class,
-    #         "num_classes": num_classes,
-    #         "img_size": IMG_SIZE,
-    #     }, best_path)
-
-    #     run.summary["best_val_acc"] = best_val_acc
-    #     run.summary["best_model_path"] = str(best_path)
-
-    #     artifact = wandb.Artifact("stage2-classifier-best", type="model")
-    #     artifact.add_file(str(best_path))
-    #     run.log_artifact(artifact)
-
-    #     print(f"Best val acc: {best_val_acc:.4f}")
-    #     print(f"Saved best model to: {best_path}")
+    print("\n학습 완료")
+    print(f"best.pt: {output['best_path']}")
+    print(f"last.pt: {output['last_path']}")
+    print(f"hparams.json: {output['hparams_path']}")
 
 
 if __name__ == "__main__":

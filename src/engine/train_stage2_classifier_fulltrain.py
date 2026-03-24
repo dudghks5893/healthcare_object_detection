@@ -15,6 +15,7 @@ from src.utils import (
     build_class_mapping,
     save_class_mapping_json,
     set_fine_tuning,
+    EarlyStopping,
 )
 from src.datasets import PillCropDataset
 from src.models import ResNetClassifierModel
@@ -215,6 +216,8 @@ def train_stage2_classifier_fulltrain(
     print("train samples:", len(dataset))
     print("save_dir:", save_dir)
 
+    # early_stopping = EarlyStopping(patience=10, min_delta=0.003, mode="min")
+
     with wandb.init(
         project="test",
         name=f"stage2_{model_name}_v1",
@@ -227,6 +230,12 @@ def train_stage2_classifier_fulltrain(
             train_loss, train_acc = train_one_epoch(
                 model, loader, criterion, optimizer, device
             )
+
+            # early_stopping(train_loss)
+
+            # if early_stopping.stop:
+            #     print("더이상 학습 개선 진행 불가로 epoch 종료!")
+            #     break
 
             print(
                 f"[Epoch {epoch:02d}/{epochs}] "
