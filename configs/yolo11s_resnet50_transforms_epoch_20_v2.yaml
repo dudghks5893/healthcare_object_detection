@@ -15,6 +15,9 @@ stage1:
   dataset_dir: data/processed/v2/yolo_stage1_dataset
   checkpoint_dir: checkpoints/v2/stage1_detector
 
+  wandb_project: Healthcare
+  wandb_run_name: stage1_yolo11s_transforms_epoch_20_v2
+
   model_name: yolo11s.pt
   run_name: yolo11s_epoch_20
 
@@ -68,6 +71,9 @@ stage2:
   checkpoint_dir: checkpoints/v2/stage2_classifier/resnet50_transforms_epoch_20_v2
   train_csv: data/processed/v2/stage2_classifier_crop_dataset/metadata/train_crop_labels.csv
   val_csv: data/processed/v2/stage2_classifier_crop_dataset/metadata/val_crop_labels.csv
+
+  wandb_project: Healthcare
+  wandb_run_name: stage2_resnet50_transforms_epoch_20_v2
 
   model_name: resnet50
   pretrained: true

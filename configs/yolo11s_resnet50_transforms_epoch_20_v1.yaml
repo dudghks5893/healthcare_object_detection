@@ -12,9 +12,13 @@ split:
   random_state: 42
 
 stage1:
-  model_name: yolo11s.pt
   dataset_dir: data/processed/v1/yolo_stage1_dataset
   checkpoint_dir: checkpoints/v1/stage1_detector
+
+  wandb_project: Healthcare
+  wandb_run_name: stage1_yolo11s_transforms_epoch_20_v1
+
+  model_name: yolo11s.pt
   run_name: yolo11s
 
   # 학습 기본 설정
@@ -63,10 +67,15 @@ stage1:
   # exist_ok: true
 
 stage2:
+  crop_dataset_dir: data/processed/v1/stage2_classifier_crop_dataset
+  checkpoint_dir: checkpoints/v1/stage2_classifier/resnet50
+  train_csv: data/processed/v1/stage2_classifier_crop_dataset/metadata/train_crop_labels.csv
+  val_csv: data/processed/v1/stage2_classifier_crop_dataset/metadata/val_crop_labels.csv
+
+  wandb_project: Healthcare
+  wandb_run_name: stage2_resnet50_transforms_epoch_20_v1
   model_name: resnet50
   pretrained: true
-  crop_dataset_dir: data/processed/v1/stage2_classifier_crop_dataset
-  checkpoint_dir: checkpoints/v1/stage2_classifier/resnet50_transforms
   img_size: 224
   batch_size: 32
   epochs: 20
@@ -75,40 +84,40 @@ stage2:
   pin_memory: true
   crop_margin_ratio: 0.10
 
-  # augmentation:
-  #   use_train_aug: true
+  augmentation:
+    use_train_aug: true
 
-  #   color_jitter:
-  #     brightness: 0.08
-  #     contrast: 0.08
-  #     saturation: 0.03
-  #     hue: 0.0
-  #     p: 1.0
+    color_jitter:
+      brightness: 0.08
+      contrast: 0.08
+      saturation: 0.03
+      hue: 0.0
+      p: 0.4
 
-  #   random_affine:
-  #     degrees: 2
-  #     translate: [0.02, 0.02]
-  #     scale: [0.98, 1.02]
-  #     p: 1.0
+    random_affine:
+      degrees: 5
+      translate: [0.02, 0.02]
+      scale: [0.98, 1.02]
+      p: 0.3
 
-  #   gaussian_blur:
-  #     kernel_size: 3
-  #     sigma: [0.1, 0.5]
-  #     p: 0.15
+    gaussian_blur:
+      kernel_size: 3
+      sigma: [0.1, 0.5]
+      p: 0.2
 
-  #   horizontal_flip:
-  #     p: 0.0
+    horizontal_flip:
+      p: 0.0
 
-  #   vertical_flip:
-  #     p: 0.0
+    vertical_flip:
+      p: 0.3
 
-  # aug_preview:
-  #   enabled: true
-  #   num_samples: 12
-  #   save_dir: outputs/aug_preview/stage2
-  #   log_to_wandb: true
+  aug_preview:
+    enabled: true
+    num_samples: 12
+    save_dir: outputs/aug_preview/stage2
+    log_to_wandb: true
 
 output:
-  submission_csv: outputs/submission/v1/yolo11s_resnet50_transforms_v1.csv
+  submission_csv: outputs/submission/v1/yolo11s_resnet50_transforms_epoch_20_v1.csv
   predict_vis_dir: outputs/predict/v1
   save_vis_limit: 10
