@@ -130,6 +130,30 @@ def build_v2_master_table(
         print("\n[경고] 생성된 DataFrame이 비어 있습니다.")
         return df
 
+    # 숫자 컬럼 강제 변환
+    numeric_cols = [
+        "image_id",
+        "width",
+        "height",
+        "bbox_x",
+        "bbox_y",
+        "bbox_w",
+        "bbox_h",
+        "class_id",
+        "ann_id",
+        "area",
+        "iscrowd",
+    ]
+
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    print("\n==== 숫자형 변환 후 NaN 개수 확인 ====")
+    for col in numeric_cols:
+        if col in df.columns:
+            print(f"{col} NaN:", df[col].isna().sum())
+
     train_image_paths = list(train_img_dir.rglob("*"))
     train_image_names = {p.name for p in train_image_paths if p.is_file()}
 
