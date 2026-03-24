@@ -12,7 +12,7 @@ python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --s
 python main.py --config configs/yolo11n_resnet18_v1.yaml --step preprocess
 
 3. Stage1 (Detector 학습)
-python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --step stage1
+python main.py --config configs/yolo11s_resnet50_v1_test.yaml --step stage1
 
 4. Stage2 (Classifier 학습)
 python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --step stage2
@@ -48,7 +48,6 @@ from src.utils import load_config
 from src.preprocessing.build_master_table import build_master_table
 from src.preprocessing.v2_build_master_table import build_v2_master_table
 from src.preprocessing.make_split import make_split
-from src.preprocessing.v2_make_split import make_v2_split
 from src.preprocessing.build_yolo_stage1_dataset import build_yolo_stage1_dataset
 from src.preprocessing.v2_build_yolo_stage1_dataset import build_v2_yolo_stage1_dataset
 from src.engine.train_yolo_stage1_detector import train_yolo_stage1_detector
@@ -140,26 +139,12 @@ def step_1_build_master(cfg, paths):
 
 def step_2_make_split(cfg, paths):
     print("\n[STEP 2] make_split 시작")
-    version = cfg["version"]
-    if version == "v1":
-        print("version: v1")
-        make_split(
+    make_split(
             master_csv=paths["master_csv"],
             save_dir=paths["processed_dir"],
             val_size=cfg["split"]["val_size"],
             random_state=cfg["split"]["random_state"],
-        )
-    elif version == "v2":
-        print("version: v2")
-        make_v2_split(
-            master_csv=paths["master_csv"],
-            save_dir=paths["processed_dir"],
-            val_size=cfg["split"]["val_size"],
-            random_state=cfg["split"]["random_state"],
-        )
-    else:
-        raise ValueError(f"지원하지 않는 version: {version}")
-    
+    )
     print("[STEP 2] 완료")
 
 
@@ -194,6 +179,8 @@ def step_4_train_stage1_detector(cfg, paths):
     stage1_cfg = cfg["stage1"]
 
     train_yolo_stage1_detector(
+        wandb_project=cfg["stage1"]["wandb_project"],
+        wandb_run_name=cfg["stage1"]["wandb_run_name"],
         data_yaml=paths["stage1_dataset_dir"] / "data.yaml",
         model_name=stage1_cfg["model_name"],
         epochs=stage1_cfg["epochs"],
@@ -288,6 +275,8 @@ def step_7_train_stage2_classifier(cfg, paths):
     stage2_cfg = cfg["stage2"]
 
     train_stage2_classifier(
+        wandb_project=cfg["stage2"]["wandb_project"],
+        wandb_run_name=cfg["stage2"]["wandb_run_name"],
         train_csv=paths["stage2_train_csv"],
         val_csv=paths["stage2_val_csv"],
         save_dir=paths["stage2_checkpoint_dir"],

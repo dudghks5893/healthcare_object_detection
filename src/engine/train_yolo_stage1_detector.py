@@ -1,7 +1,6 @@
 from pathlib import Path
-import os
-from ultralytics import YOLO, settings
-
+from ultralytics import YOLO
+import wandb
 from src.utils import get_device
 from src.utils import set_seed
 
@@ -41,40 +40,9 @@ def to_yolo_device(device):
         return "mps"
     return "cpu"
 
-
-# def upload_run_outputs(run, save_dir: Path, artifact_name: str):
-#     files_to_log = [
-#         save_dir / "results.csv",
-#         save_dir / "args.yaml",
-#         save_dir / "F1_curve.png",
-#         save_dir / "P_curve.png",
-#         save_dir / "R_curve.png",
-#         save_dir / "PR_curve.png",
-#         save_dir / "confusion_matrix.png",
-#         save_dir / "confusion_matrix_normalized.png",
-#         save_dir / "weights" / "best.pt",
-#         save_dir / "weights" / "last.pt",
-#     ]
-
-#     for path in files_to_log:
-#         if path.exists():
-#             run.save(str(path), policy="now")
-
-#     artifact = wandb.Artifact(artifact_name, type="model")
-
-#     best_model = save_dir / "weights" / "best.pt"
-#     last_model = save_dir / "weights" / "last.pt"
-
-#     if best_model.exists():
-#         artifact.add_file(str(best_model))
-#     if last_model.exists():
-#         artifact.add_file(str(last_model))
-
-#     if len(artifact.manifest.entries) > 0:
-#         run.log_artifact(artifact)
-
-
 def train_yolo_stage1_detector(
+    wandb_project: str = "test",
+    wandb_run_name: str = "train_yolo_stage1_detector",
     data_yaml: Path = DATA_YAML,
     model_name: str = "yolo11s.pt",
     epochs: int = 20,
@@ -132,9 +100,8 @@ def train_yolo_stage1_detector(
         그래서 project 이름을 직접 못 넣음
         대신 환경변수로 override 해야 함
     """
-    settings.update({"wandb": True})        # Ultralytics에서 제공 wandb 설정
-    os.environ["WANDB_PROJECT"] = "test"    # project 이름
-    os.environ["WANDB_NAME"] = run_name     # run 이름
+
+    wandb.init(project=wandb_project, name=wandb_run_name, job_type="training")
 
     model = YOLO(model_name)
     # 필수 파라미터

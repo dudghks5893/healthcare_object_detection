@@ -213,6 +213,8 @@ def run_one_epoch(model, loader, criterion, optimizer, device, train: bool = Tru
 
 
 def train_stage2_classifier(
+    wandb_project: str = "test",
+    wandb_run_name: str = "train_stage2_classifier",
     train_csv: Path = TRAIN_CSV,
     val_csv: Path = VAL_CSV,
     save_dir: Path = SAVE_DIR,
@@ -301,8 +303,8 @@ def train_stage2_classifier(
     early_stopping = EarlyStopping(patience=10, min_delta=0.003, mode="min")
 
     with wandb.init(
-        project="test",
-        name=f"stage2_{model_name}",
+        project=wandb_project,
+        name=wandb_run_name,
         config=hparams,
     ) as run:
         preview_save_dir = save_dir / "aug_preview"
