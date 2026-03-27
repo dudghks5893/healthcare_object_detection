@@ -4,14 +4,9 @@ seed: 42
 paths:
   test_img_dir: data/raw/v1/test_images
 
-  # annot_root: data/raw/v2/train_annotations
-  # train_img_dir: data/raw/v3/train_images
-  # processed_dir: data/processed/v3
-
-  annot_root: data/raw/v3/stage2/train_annotations
-  train_img_dir: data/raw/v3/stage2/train_images
-  processed_dir: data/processed/v3/stage2
-  
+  # annot_root: data/raw/v3/stage2/train_annotations
+  # train_img_dir: data/raw/v3/stage2/train_images
+  # processed_dir: data/processed/v3/stage2
   
   stage1_annot_root: data/raw/v3/stage1/train_annotations
   stage1_train_img_dir: data/raw/v3/stage1/train_images
@@ -27,7 +22,7 @@ split:
   random_state: 42
 
 stage1:
-  dataset_dir: data/processed/v3/yolo_stage1_dataset
+  dataset_dir: data/processed/v3/stage1/yolo_stage1_dataset
   checkpoint_dir: checkpoints/v3/stage1_detector
 
   wandb_project: Healthcare
@@ -58,9 +53,9 @@ stage1:
   warmup_epochs: 2.0
 
   # loss weight
-  # box: 7.5
-  # cls: 0.5
-  # dfl: 1.5
+  # box: 7.5 # Box 위치 정확도에 대한 loss 가중치
+  # cls: 0.5 # 클래스 분류(classification) loss 가중치
+  # dfl: 1.5 # bbox 경계(edge) 위치를 더 정밀하게 맞추기 위한 loss
 
   # # # augmentation
   # hsv_h: 0.00
@@ -82,11 +77,11 @@ stage1:
   # exist_ok: true
 
 stage2:
-  crop_dataset_dir: data/processed/v3/stage2_classifier_crop_dataset
+  crop_dataset_dir: data/processed/v3/stage2/stage2_classifier_crop_dataset
   checkpoint_dir: checkpoints/v3/stage2_classifier/resnet50_tr_ep_20_v3
 
-  train_csv: data/processed/v3/stage2_classifier_crop_dataset/metadata/train_crop_labels.csv
-  val_csv: data/processed/v3/stage2_classifier_crop_dataset/metadata/val_crop_labels.csv
+  train_csv: data/processed/v3/stage2/train_annotations.csv
+  val_csv: data/processed/v3/stage2/val_annotations.csv
 
   wandb_project: Healthcare
   wandb_run_name: stage2_resnet50_tr_ep_20_v3
