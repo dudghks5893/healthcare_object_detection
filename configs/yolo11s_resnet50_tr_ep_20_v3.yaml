@@ -1,0 +1,140 @@
+version: v3
+seed: 42
+
+paths:
+  test_img_dir: data/raw/v1/test_images
+
+  # annot_root: data/raw/v2/train_annotations
+  # train_img_dir: data/raw/v3/train_images
+  # processed_dir: data/processed/v3
+
+  annot_root: data/raw/v3/stage2/train_annotations
+  train_img_dir: data/raw/v3/stage2/train_images
+  processed_dir: data/processed/v3/stage2
+  
+  
+  stage1_annot_root: data/raw/v3/stage1/train_annotations
+  stage1_train_img_dir: data/raw/v3/stage1/train_images
+  stage1_processed_dir: data/processed/v3/stage1
+
+  stage2_annot_root: data/raw/v3/stage2/train_annotations
+  stage2_train_img_dir: data/raw/v3/stage2/train_images
+  stage2_processed_dir: data/processed/v3/stage2
+
+
+split:
+  val_size: 0.2
+  random_state: 42
+
+stage1:
+  dataset_dir: data/processed/v3/yolo_stage1_dataset
+  checkpoint_dir: checkpoints/v3/stage1_detector
+
+  wandb_project: Healthcare
+  wandb_run_name: stage1_yolo11s_tr_ep_20_v3
+
+  model_name: yolo11s.pt
+  run_name: yolo11s_ep_20_v3
+
+  # 학습 기본 설정
+  epochs: 20
+  imgsz: 768
+  batch: 8
+  workers: 4
+  patience: 10
+  val: true
+  pretrained: true
+
+  # 추론 / 후처리 기본값
+  conf: 0.5 # 낮은 점수 박스 제거 (confidence threshold)
+  iou: 0.5 # 겹치는 박스 제거 (overlap threshold)
+
+  # optimizer / lr
+  optimizer: AdamW
+  lr0: 0.001
+  lrf: 0.01
+  weight_decay: 0.0005
+  cos_lr: true
+  warmup_epochs: 2.0
+
+  # loss weight
+  # box: 7.5
+  # cls: 0.5
+  # dfl: 1.5
+
+  # # # augmentation
+  # hsv_h: 0.00
+  # hsv_s: 0.0
+  # hsv_v: 0.0
+  # degrees: 0.0
+  # translate: 0.0
+  # scale: 0.0
+  # fliplr: 0.0
+  # flipud: 0.0
+  # mosaic: 0.0
+  # mixup: 0.0
+  # copy_paste: 0.0
+
+  # # 기타
+  # save: true
+  # verbose: true
+  # plots: true
+  # exist_ok: true
+
+stage2:
+  crop_dataset_dir: data/processed/v3/stage2_classifier_crop_dataset
+  checkpoint_dir: checkpoints/v3/stage2_classifier/resnet50_tr_ep_20_v3
+
+  train_csv: data/processed/v3/stage2_classifier_crop_dataset/metadata/train_crop_labels.csv
+  val_csv: data/processed/v3/stage2_classifier_crop_dataset/metadata/val_crop_labels.csv
+
+  wandb_project: Healthcare
+  wandb_run_name: stage2_resnet50_tr_ep_20_v3
+
+  model_name: resnet50
+  pretrained: true
+  img_size: 224
+  batch_size: 32
+  epochs: 20
+  lr: 0.0001
+  num_workers: 4
+  pin_memory: true
+  crop_margin_ratio: 0.0
+
+  augmentation:
+    use_train_aug: true
+
+    color_jitter:
+      brightness: 0.08
+      contrast: 0.08
+      saturation: 0.03
+      hue: 0.0
+      p: 0.4
+
+    random_affine:
+      degrees: 0
+      translate: [0.02, 0.02]
+      scale: [0.98, 1.02]
+      p: 0.3
+
+    gaussian_blur:
+      kernel_size: 3
+      sigma: [0.1, 0.5]
+      p: 0.2
+
+    horizontal_flip:
+      p: 0.0
+
+    vertical_flip:
+      p: 0.0
+
+  aug_preview:
+    enabled: true
+    num_samples: 12
+    save_dir: outputs/aug_preview/stage2
+    log_to_wandb: true
+
+output:
+  submission_csv: outputs/submission/v3/yolo11s_resnet50_tr_ep_20_v3.csv
+  predict_vis_dir: outputs/predict/v3
+  save_vis_limit: 10
