@@ -34,8 +34,8 @@ from sklearn.model_selection import train_test_split
 """
 
 
-MASTER_CSV = Path("data/processed/v2/stage2_classifier_crop_dataset/metadata/master_crop_labels.csv")
-SAVE_DIR = Path("data/processed/v2/stage2_classifier_crop_dataset/metadata")
+MASTER_CSV = Path("data/processed/v3/stage2/master_annotations.csv")
+SAVE_DIR = Path("data/processed/v3/stage2")
 
 VAL_SIZE = 0.2
 RANDOM_STATE = 42
@@ -97,20 +97,24 @@ def make_split_by_class(
     # stratify를 사용하므로
     # 최소 샘플 수가 너무 적은 클래스가 있으면 에러가 날 수 있음
     class_counts = df["class_id"].value_counts()
-    if (class_counts < 2).any():
-        few_classes = class_counts[class_counts < 2].to_dict()
-        raise ValueError(
-            "샘플 수가 1개뿐인 클래스가 있어 stratified split을 할 수 없습니다. "
-            f"해당 클래스: {few_classes}"
-        )
+
+    # 샘플 1개짜리 class 찾기
+    rare_classes = class_counts[class_counts < 2].index
+
+    rare_df = df[df["class_id"].isin(rare_classes)]
+    normal_df = df[~df["class_id"].isin(rare_classes)]
+
+    if len(rare_df) > 0:
+        print("\n[INFO] 샘플 1개짜리 클래스 발견 → val에 강제 배치")
+        print(rare_df["class_id"].value_counts())
 
     # class 비율을 유지하면서 train / val 분리
     train_df, val_df = train_test_split(
-        df,
+        normal_df,
         test_size=val_size,
         random_state=random_state,
         shuffle=True,
-        stratify=df["class_id"],
+        stratify=normal_df["class_id"],
     )
 
     # index 정리
