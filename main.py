@@ -76,31 +76,62 @@ from src.engine.predict_2stage import predict_2stage
 # 경로 생성
 # =========================
 def build_paths(cfg):
-    processed_dir = Path(cfg["paths"]["processed_dir"])
-    train_img_dir = Path(cfg["paths"]["train_img_dir"])
     test_img_dir = Path(cfg["paths"]["test_img_dir"])
-    annot_root = Path(cfg["paths"]["annot_root"])
+    processed_dir = Path(cfg["paths"]["processed_dir"]) if cfg["paths"].get("processed_dir") else None
+    train_img_dir = Path(cfg["paths"]["train_img_dir"]) if cfg["paths"].get("train_img_dir") else None
+    annot_root = Path(cfg["paths"]["annot_root"]) if cfg["paths"].get("annot_root") else None
 
-    master_csv = processed_dir / "master_annotations.csv"
-    train_csv = processed_dir / "train_annotations.csv"
-    val_csv = processed_dir / "val_annotations.csv"
+    stage1_processed_dir = Path(cfg["paths"]["stage1_processed_dir"]) if cfg["paths"].get("stage1_processed_dir") else None
+    stage1_train_img_dir = Path(cfg["paths"]["stage1_train_img_dir"]) if cfg["paths"].get("stage1_train_img_dir") else None
+    stage1_annot_root = Path(cfg["paths"]["stage1_annot_root"]) if cfg["paths"].get("stage1_annot_root") else None
+
+    stage2_processed_dir = Path(cfg["paths"]["stage2_processed_dir"]) if cfg["paths"].get("stage2_processed_dir") else None
+    stage2_train_img_dir = Path(cfg["paths"]["stage2_train_img_dir"]) if cfg["paths"].get("stage2_train_img_dir") else None
+    stage2_annot_root = Path(cfg["paths"]["stage2_annot_root"]) if cfg["paths"].get("stage2_annot_root") else None
+
+    master_csv = processed_dir / "master_annotations.csv" if processed_dir else None
+    train_csv = processed_dir / "train_annotations.csv" if processed_dir else None
+    val_csv = processed_dir / "val_annotations.csv" if processed_dir else None
+
+    stage1_master_csv = (
+        stage1_processed_dir / "master_annotations.csv"
+        if stage1_processed_dir else None
+    )
+    stage2_master_csv = (
+        stage2_processed_dir / "master_annotations.csv"
+        if stage2_processed_dir else None
+    )
+
+    stage1_train_csv = (
+        stage1_processed_dir / "train_annotations.csv"
+        if stage1_processed_dir else None
+    )
+    stage1_val_csv = (
+        stage1_processed_dir / "val_annotations.csv"
+        if stage1_processed_dir else None
+    )
+
+    stage2_split_train_csv = (
+        stage2_processed_dir / "train_annotations.csv"
+        if stage2_processed_dir else None
+    )
+    stage2_split_val_csv = (
+        stage2_processed_dir / "val_annotations.csv"
+        if stage2_processed_dir else None
+    )
 
     stage1_dataset_dir = Path(cfg["stage1"]["dataset_dir"])
     stage1_checkpoint_dir = Path(cfg["stage1"]["checkpoint_dir"])
 
     stage2_crop_dataset_dir = Path(cfg["stage2"]["crop_dataset_dir"])
-
-    # fulltrain에서도 이거 하나만 사용
-    stage2_train_csv = Path(cfg["stage2"]["train_csv"])
-    # val은 fulltrain에서는 없을 수 있으므로 안전하게 처리
+    stage2_train_csv = Path(cfg["stage2"]["train_csv"]) if cfg["stage2"].get("train_csv") else None
     stage2_val_csv = Path(cfg["stage2"]["val_csv"]) if cfg["stage2"].get("val_csv") else None
 
-    # class weight용
     stage2_class_dist_csv = (
-        processed_dir
-        / "class_distribution_v2.csv"
+        processed_dir / "class_distribution_v2.csv"
+        if processed_dir else None
     )
-    
+
     stage2_checkpoint_dir = Path(cfg["stage2"]["checkpoint_dir"])
 
     detector_weight = stage1_checkpoint_dir / cfg["stage1"]["run_name"] / "weights" / "best.pt"
@@ -110,22 +141,44 @@ def build_paths(cfg):
     predict_vis_dir = Path(cfg["output"]["predict_vis_dir"])
 
     return {
+        "test_img_dir": test_img_dir,
+
         "annot_root": annot_root,
         "train_img_dir": train_img_dir,
-        "test_img_dir": test_img_dir,
         "processed_dir": processed_dir,
+
+        "stage1_annot_root": stage1_annot_root,
+        "stage1_train_img_dir": stage1_train_img_dir,
+        "stage1_processed_dir": stage1_processed_dir,
+
+        "stage2_annot_root": stage2_annot_root,
+        "stage2_train_img_dir": stage2_train_img_dir,
+        "stage2_processed_dir": stage2_processed_dir,
+
         "master_csv": master_csv,
         "train_csv": train_csv,
         "val_csv": val_csv,
+
+        "stage1_master_csv": stage1_master_csv,
+        "stage2_master_csv": stage2_master_csv,
+        "stage1_train_csv": stage1_train_csv,
+        "stage1_val_csv": stage1_val_csv,
+        "stage2_split_train_csv": stage2_split_train_csv,
+        "stage2_split_val_csv": stage2_split_val_csv,
+
         "stage2_class_dist_csv": stage2_class_dist_csv,
+
         "stage1_dataset_dir": stage1_dataset_dir,
         "stage1_checkpoint_dir": stage1_checkpoint_dir,
+
         "stage2_crop_dataset_dir": stage2_crop_dataset_dir,
         "stage2_train_csv": stage2_train_csv,
         "stage2_val_csv": stage2_val_csv,
         "stage2_checkpoint_dir": stage2_checkpoint_dir,
+
         "detector_weight": detector_weight,
         "classifier_weight": classifier_weight,
+
         "submission_csv": submission_csv,
         "predict_vis_dir": predict_vis_dir,
     }
@@ -164,24 +217,75 @@ def step_1_build_master(cfg, paths):
         )
     else:
         print(f"version: {version}")
-        json_path = paths["annot_root"] / "_annotations.fixed.coco.json"
-        build_v2_master_table(
-            json_path=json_path,
-            train_img_dir=paths["train_img_dir"],
-            save_path=paths["master_csv"],
-        )
-    
+        annot_root = paths["annot_root"]
+        if annot_root is None:
+            # stage1 / stage2 데이터가 서로 다른 경우
+            stage_jobs = [
+                (
+                    paths["stage1_annot_root"] / "_annotations.fixed.coco.json",
+                    paths["stage1_train_img_dir"],
+                    paths["stage1_master_csv"],
+                ),
+                (
+                    paths["stage2_annot_root"] / "_annotations.fixed.coco.json",
+                    paths["stage2_train_img_dir"],
+                    paths["stage2_master_csv"],
+                ),
+            ]
+
+            for json_path, train_img_dir, save_path in stage_jobs:
+                build_v2_master_table(
+                    json_path=json_path,
+                    train_img_dir=train_img_dir,
+                    save_path=save_path,
+                )
+        else:
+            # 공통 annotation / image dir 사용하는 경우
+            json_path = annot_root / "_annotations.fixed.coco.json"
+            build_v2_master_table(
+                json_path=json_path,
+                train_img_dir=paths["train_img_dir"],
+                save_path=paths["master_csv"],
+            )
     print("[STEP 1] 완료")
 
 
 def step_2_make_split(cfg, paths):
     print("\n[STEP 2] make_split 시작")
-    make_split(
+
+    annot_root = paths["annot_root"]
+
+    if annot_root is None:
+        split_jobs = [
+            {
+                "name": "stage1",
+                "master_csv": paths["stage1_master_csv"],
+                "save_dir": paths["stage1_processed_dir"],
+            },
+            {
+                "name": "stage2",
+                "master_csv": paths["stage2_master_csv"],
+                "save_dir": paths["stage2_processed_dir"],
+            },
+        ]
+
+        for job in split_jobs:
+            print(f"[STEP 2] {job['name']} split 진행")
+            make_split(
+                master_csv=job["master_csv"],
+                save_dir=job["save_dir"],
+                val_size=cfg["split"]["val_size"],
+                random_state=cfg["split"]["random_state"],
+            )
+
+    else:
+        make_split(
             master_csv=paths["master_csv"],
             save_dir=paths["processed_dir"],
             val_size=cfg["split"]["val_size"],
             random_state=cfg["split"]["random_state"],
-    )
+        )
+
     print("[STEP 2] 완료")
 
 
@@ -198,10 +302,13 @@ def step_3_build_yolo_stage1_dataset(cfg, paths):
         )
     else:
         print(f"version: {version}")
+        train_csv = paths["train_csv"] or paths["stage1_train_csv"]
+        val_csv = paths["val_csv"] or paths["stage1_val_csv"]
+        raw_img_dir = paths["train_img_dir"] or paths["stage1_train_img_dir"]
         build_v2_yolo_stage1_dataset(
-            train_csv=paths["train_csv"],
-            val_csv=paths["val_csv"],
-            raw_img_dir=paths["train_img_dir"],
+            train_csv=train_csv,
+            val_csv=val_csv,
+            raw_img_dir=raw_img_dir,
             save_root=paths["stage1_dataset_dir"],
         )
     
@@ -281,10 +388,13 @@ def step_5_build_stage2_crop_dataset(cfg, paths):
         )
     else:
         print(f"version: {version}")
+        train_csv = paths["train_csv"] or paths["stage2_train_csv"]
+        val_csv = paths["val_csv"] or paths["stage2_val_csv"]
+        raw_img_dir = paths["train_img_dir"] or paths["stage2_train_img_dir"]
         build_v2_stage2_crop_dataset(
-            train_csv=paths["train_csv"],
-            val_csv=paths["val_csv"],
-            raw_img_dir=paths["train_img_dir"],
+            train_csv=train_csv,
+            val_csv=val_csv,
+            raw_img_dir=raw_img_dir,
             save_root=paths["stage2_crop_dataset_dir"],
             margin_ratio=cfg["stage2"]["crop_margin_ratio"],
         )
