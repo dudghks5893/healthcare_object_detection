@@ -273,8 +273,46 @@ def train_stage2_classifier(
 
     set_fine_tuning(model, mode="full")
 
+    # df = pd.read_csv(train_csv)
+
+    # raw_counts = df["class_id"].value_counts().to_dict()
+
+    # weights = torch.ones(num_classes, dtype=torch.float)
+
+    # for class_name, idx in class_to_idx.items():
+    #     count = raw_counts[int(class_name)]
+    #     weights[idx] = len(df) / count
+
+
+    dist_df = pd.read_csv(
+        "data/processed/v1/train_class_distribution.csv"
+    )
+    count_dict = dict(
+        zip(
+            dist_df["class_id"],
+            dist_df["count"]
+        )
+    )
+    total = sum(count_dict.values())
+
+    class_weights = torch.ones(
+        num_classes,
+        dtype=torch.float
+    )
+    for class_id, idx in class_to_idx.items():
+
+        count = count_dict[int(class_id)]
+
+        class_weights[idx] = total / count
+
+    # optional (안정화)
+    # class_weights = class_weights / class_weights.mean()
+
+    # optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
+    # criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
     hparams = {
         "mode": "stage2_val_split",
@@ -345,12 +383,6 @@ def train_stage2_classifier(
                 f"val_loss={val_loss:.4f} val_acc={val_acc:.4f}"
             )
 
-            early_stopping(val_loss)
-
-            if early_stopping.stop:
-                print("더이상 학습 개선 진행 불가로 epoch 종료!")
-                break
-
             wandb.log({
                 "epoch": epoch,
                 "train/loss": train_loss,
@@ -363,6 +395,12 @@ def train_stage2_classifier(
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_state = {k: v.cpu() for k, v in model.state_dict().items()}
+
+            early_stopping(val_loss)
+
+            if early_stopping.stop:
+                print("더이상 학습 개선 진행 불가로 epoch 종료!")
+                break
 
         if best_state is None:
             best_state = {k: v.cpu() for k, v in model.state_dict().items()}

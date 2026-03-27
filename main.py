@@ -21,21 +21,32 @@ python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --s
 python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --step predict
 
 6. 개별 단계 실행
-python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --step 1
+python main.py --config configs/yolo11s_resnet50_tr_ep_10_full_v2.yaml --step 1
 ...
 python main.py --config configs/yolo11n_resnet18_v1.yaml --step 8
 
 -------------------------------------------
-[Step 설명]
 
+[추론 (Submission 생성) 기준 Step 설명]
+0. predict_2stage                  → 최종 제출 CSV 생성
+
+[Split Train Data 기준 Step 설명]
 1. build_master_table              → json → CSV 변환
 2. make_split                      → train/val 분리
 3. build_yolo_stage1_dataset       → YOLO dataset 생성
 4. train_yolo_stage1_detector      → bbox detector 학습
 5. build_stage2_crop_dataset       → crop 이미지 생성
-6. make_stage2_fulltrain_csv       → full-train CSV 생성
-7. train_stage2_classifier         → 분류 모델 학습
-8. predict_2stage                  → 최종 제출 CSV 생성
+6. train_stage2_classifier         → 분류 모델 학습
+7. make_stage2_fulltrain_csv       → full-train CSV 생성 (Split 한거 다시 합치는 용도 필요 시 사용)
+
+
+
+[Full Train Data 기준 Step 설명]
+11. build_master_table                           → json → CSV 변환
+12. v2_build_yolo_stage1_dataset_fulltrain       → YOLO Full Train Dataset 생성 (해당 페이지에 들어가서 단일 실행 시 생성 가능)
+13. train_yolo_stage1_detector                   → bbox detector 학습 (yaml에 stage1 부분에 val=false 설정 필요.)
+14. v2_build_stage2_crop_dataset_fulltrain       → Full Train Crop Dataset 이미지 생성 (해당 페이지에 들어가서 단일 실행 시 생성 가능)
+15. stage2_classifier_fulltrain                  → 분류 모델 full train 학습
 
 -------------------------------------------
 """
@@ -50,9 +61,11 @@ from src.preprocessing.v2_build_master_table import build_v2_master_table
 from src.preprocessing.make_split import make_split
 from src.preprocessing.build_yolo_stage1_dataset import build_yolo_stage1_dataset
 from src.preprocessing.v2_build_yolo_stage1_dataset import build_v2_yolo_stage1_dataset
+from src.preprocessing.v2_build_yolo_stage1_dataset_fulltrain import v2_build_yolo_stage1_dataset_fulltrain
 from src.engine.train_yolo_stage1_detector import train_yolo_stage1_detector
 from src.preprocessing.build_stage2_crop_dataset import build_stage2_crop_dataset
 from src.preprocessing.v2_build_stage2_crop_dataset import build_v2_stage2_crop_dataset
+from src.preprocessing.v2_build_stage2_crop_dataset_fulltrain import v2_build_stage2_crop_dataset_fulltrain
 from src.preprocessing.make_stage2_fulltrain_csv import make_stage2_fulltrain_csv
 from src.engine.train_stage2_classifier import train_stage2_classifier
 from src.engine.train_stage2_classifier_fulltrain import train_stage2_classifier_fulltrain
@@ -76,9 +89,18 @@ def build_paths(cfg):
     stage1_checkpoint_dir = Path(cfg["stage1"]["checkpoint_dir"])
 
     stage2_crop_dataset_dir = Path(cfg["stage2"]["crop_dataset_dir"])
+
+    # fulltrain에서도 이거 하나만 사용
     stage2_train_csv = Path(cfg["stage2"]["train_csv"])
-    stage2_val_csv = Path(cfg["stage2"]["val_csv"])
-    stage2_fulltrain_csv = stage2_crop_dataset_dir / "metadata" / "full_train_crop_labels.csv"
+    # val은 fulltrain에서는 없을 수 있으므로 안전하게 처리
+    stage2_val_csv = Path(cfg["stage2"]["val_csv"]) if cfg["stage2"].get("val_csv") else None
+
+    # class weight용
+    stage2_class_dist_csv = (
+        processed_dir
+        / "class_distribution_v2.csv"
+    )
+    
     stage2_checkpoint_dir = Path(cfg["stage2"]["checkpoint_dir"])
 
     detector_weight = stage1_checkpoint_dir / cfg["stage1"]["run_name"] / "weights" / "best.pt"
@@ -95,12 +117,12 @@ def build_paths(cfg):
         "master_csv": master_csv,
         "train_csv": train_csv,
         "val_csv": val_csv,
+        "stage2_class_dist_csv": stage2_class_dist_csv,
         "stage1_dataset_dir": stage1_dataset_dir,
         "stage1_checkpoint_dir": stage1_checkpoint_dir,
         "stage2_crop_dataset_dir": stage2_crop_dataset_dir,
         "stage2_train_csv": stage2_train_csv,
         "stage2_val_csv": stage2_val_csv,
-        "stage2_fulltrain_csv": stage2_fulltrain_csv,
         "stage2_checkpoint_dir": stage2_checkpoint_dir,
         "detector_weight": detector_weight,
         "classifier_weight": classifier_weight,
@@ -112,27 +134,42 @@ def build_paths(cfg):
 # =========================
 # STEP 함수들
 # =========================
+def step_0_predict(cfg, paths):
+    print("\n[STEP 0] predict_2stage 시작")
+    predict_2stage(
+        test_img_dir=paths["test_img_dir"],
+        detector_weight=paths["detector_weight"],
+        classifier_weight=paths["classifier_weight"],
+        classifier_dir=paths["stage2_checkpoint_dir"],
+        save_csv=paths["submission_csv"],
+        predict_vis_dir=paths["predict_vis_dir"],
+        det_imgsz=cfg["stage1"]["imgsz"],
+        det_conf=cfg["stage1"]["conf"],
+        det_iou=cfg["stage1"]["iou"],
+        crop_margin_ratio=cfg["stage2"]["crop_margin_ratio"],
+        save_vis_limit=cfg["output"]["save_vis_limit"],
+    )
+    print("[STEP 0] 완료")
+
 def step_1_build_master(cfg, paths):
     print("\n[STEP 1] build_master_table 시작")
     version = cfg["version"]
 
     if version == "v1":
-        print("version: v1")
+        print(f"version: {version}")
         build_master_table(
             annot_root=paths["annot_root"],
             train_img_dir=paths["train_img_dir"],
             save_path=paths["master_csv"],
         )
-    elif version == "v2":
-        print("version: v2")
+    else:
+        print(f"version: {version}")
         json_path = paths["annot_root"] / "_annotations.fixed.coco.json"
         build_v2_master_table(
             json_path=json_path,
             train_img_dir=paths["train_img_dir"],
             save_path=paths["master_csv"],
         )
-    else:
-        raise ValueError(f"지원하지 않는 version: {version}")
     
     print("[STEP 1] 완료")
 
@@ -152,23 +189,21 @@ def step_3_build_yolo_stage1_dataset(cfg, paths):
     print("\n[STEP 3] build_yolo_stage1_dataset 시작")
     version = cfg["version"]
     if version == "v1":
-        print("version: v1")
+        print(f"version: {version}")
         build_yolo_stage1_dataset(
             train_csv=paths["train_csv"],
             val_csv=paths["val_csv"],
             raw_img_dir=paths["train_img_dir"],
             save_root=paths["stage1_dataset_dir"],
         )
-    elif version == "v2":
-        print("version: v2")
+    else:
+        print(f"version: {version}")
         build_v2_yolo_stage1_dataset(
             train_csv=paths["train_csv"],
             val_csv=paths["val_csv"],
             raw_img_dir=paths["train_img_dir"],
             save_root=paths["stage1_dataset_dir"],
         )
-    else:
-        raise ValueError(f"지원하지 않는 version: {version}")
     
     print("[STEP 3] 완료")
 
@@ -234,7 +269,7 @@ def step_5_build_stage2_crop_dataset(cfg, paths):
     version = cfg["version"]
 
     if version == "v1":
-        print("version: v1")
+        print(f"version: {version}")
         build_stage2_crop_dataset(
             train_csv=paths["train_csv"],
             val_csv=paths["val_csv"],
@@ -244,8 +279,8 @@ def step_5_build_stage2_crop_dataset(cfg, paths):
             show_samples=False,
             num_sample_images=5,
         )
-    elif version == "v2":
-        print("version: v2")
+    else:
+        print(f"version: {version}")
         build_v2_stage2_crop_dataset(
             train_csv=paths["train_csv"],
             val_csv=paths["val_csv"],
@@ -253,24 +288,11 @@ def step_5_build_stage2_crop_dataset(cfg, paths):
             save_root=paths["stage2_crop_dataset_dir"],
             margin_ratio=cfg["stage2"]["crop_margin_ratio"],
         )
-    else:
-        raise ValueError(f"지원하지 않는 version: {version}")
     
     print("[STEP 5] 완료")
 
-
-def step_6_make_stage2_fulltrain_csv(cfg, paths):
-    print("\n[STEP 6] make_stage2_fulltrain_csv 시작")
-    make_stage2_fulltrain_csv(
-        train_csv=paths["stage2_crop_dataset_dir"] / "metadata" / "train_crop_labels.csv",
-        val_csv=paths["stage2_crop_dataset_dir"] / "metadata" / "val_crop_labels.csv",
-        save_csv=paths["stage2_fulltrain_csv"],
-    )
-    print("[STEP 6] 완료")
-
-
-def step_7_train_stage2_classifier(cfg, paths):
-    print("\n[STEP 7] train_stage2_classifier 시작")
+def step_6_train_stage2_classifier(cfg, paths):
+    print("\n[STEP 6] train_stage2_classifier 시작")
 
     stage2_cfg = cfg["stage2"]
 
@@ -294,42 +316,88 @@ def step_7_train_stage2_classifier(cfg, paths):
         augmentation=stage2_cfg.get("augmentation"),
         aug_preview=stage2_cfg.get("aug_preview"),
     )
-    print("[STEP 7] 완료")
-# def step_7_train_stage2_classifier(cfg, paths):
-#     print("\n[STEP 7] train_stage2_classifier_fulltrain 시작")
-#     train_stage2_classifier_fulltrain(
-#         full_train_csv=paths["stage2_fulltrain_csv"],
-#         save_dir=paths["stage2_checkpoint_dir"],
-#         model_name=cfg["stage2"]["model_name"],
-#         pretrained=cfg["stage2"]["pretrained"],
-#         img_size=cfg["stage2"]["img_size"],
-#         batch_size=cfg["stage2"]["batch_size"],
-#         epochs=cfg["stage2"]["epochs"],
-#         lr=cfg["stage2"]["lr"],
-#         seed=cfg["seed"],
-#         num_workers=cfg["stage2"]["num_workers"],
-#         pin_memory=cfg["stage2"]["pin_memory"],
-#     )
-#     print("[STEP 7] 완료")
+    print("[STEP 6] 완료")
 
 
-def step_8_predict(cfg, paths):
-    print("\n[STEP 8] predict_2stage 시작")
-    predict_2stage(
-        test_img_dir=paths["test_img_dir"],
-        detector_weight=paths["detector_weight"],
-        classifier_weight=paths["classifier_weight"],
-        classifier_dir=paths["stage2_checkpoint_dir"],
-        save_csv=paths["submission_csv"],
-        predict_vis_dir=paths["predict_vis_dir"],
-        det_imgsz=cfg["stage1"]["imgsz"],
-        det_conf=cfg["stage1"]["conf"],
-        det_iou=cfg["stage1"]["iou"],
-        crop_margin_ratio=cfg["stage2"]["crop_margin_ratio"],
-        save_vis_limit=cfg["output"]["save_vis_limit"],
+def step_7_make_stage2_fulltrain_csv(cfg, paths):
+    print("\n[STEP 7] make_stage2_fulltrain_csv 시작")
+    make_stage2_fulltrain_csv(
+        train_csv=paths["stage2_crop_dataset_dir"] / "metadata" / "train_crop_labels.csv",
+        val_csv=paths["stage2_crop_dataset_dir"] / "metadata" / "val_crop_labels.csv",
+        save_csv=paths["stage2_fulltrain_csv"],
     )
-    print("[STEP 8] 완료")
+    print("[STEP 7] 완료")
 
+
+def step_12_build_yolo_stage1_full_dataset(cfg, paths):
+    print("\n[STEP 12] build_yolo_stage1_dataset 시작")
+    version = cfg["version"]
+    if version == "v1":
+        print(f"version: {version}")
+        v2_build_yolo_stage1_dataset_fulltrain(
+            master_csv=paths["master_csv"],
+            raw_img_dir=paths["train_img_dir"],
+            save_root=paths["stage1_dataset_dir"],
+        )
+    else:
+        print(f"version: {version}")
+        v2_build_yolo_stage1_dataset_fulltrain(
+            master_csv=paths["master_csv"],
+            raw_img_dir=paths["train_img_dir"],
+            save_root=paths["stage1_dataset_dir"],
+        )
+    
+    print("[STEP 12] 완료")
+
+
+def step_14_build_stage2_crop_full_dataset(cfg, paths):
+    print("\n[STEP 14] build_yolo_stage1_dataset 시작")
+    version = cfg["version"]
+    if version == "v1":
+        print(f"version: {version}")
+        v2_build_stage2_crop_dataset_fulltrain(
+            master_csv=paths["master_csv"],
+            raw_img_dir=paths["train_img_dir"],
+            save_root=paths["stage1_dataset_dir"],
+            margin_ratio=cfg["stage2"]["crop_margin_ratio"],
+        )
+    else:
+        print(f"version: {version}")
+        v2_build_stage2_crop_dataset_fulltrain(
+            master_csv=paths["master_csv"],
+            raw_img_dir=paths["train_img_dir"],
+            save_root=paths["stage1_dataset_dir"],
+            margin_ratio=cfg["stage2"]["crop_margin_ratio"],
+        )
+
+    print("[STEP 14] 완료")
+
+
+def step_15_train_stage2_classifier_fulltrain(cfg, paths):
+    print("\n[STEP 15] train_stage2_classifier_fulltrain 시작")
+
+    stage2_cfg = cfg["stage2"]
+
+    train_stage2_classifier_fulltrain(
+        wandb_project=stage2_cfg["wandb_project"],
+        wandb_run_name=stage2_cfg["wandb_run_name"],
+        fulltrain_csv=paths["stage2_train_csv"],
+        class_dist_csv=paths["stage2_class_dist_csv"],
+        save_dir=paths["stage2_checkpoint_dir"],
+        model_name=stage2_cfg["model_name"],
+        pretrained=stage2_cfg["pretrained"],
+        img_size=stage2_cfg["img_size"],
+        batch_size=stage2_cfg["batch_size"],
+        epochs=stage2_cfg["epochs"],
+        lr=stage2_cfg["lr"],
+        seed=cfg["seed"],
+        num_workers=stage2_cfg["num_workers"],
+        pin_memory=stage2_cfg["pin_memory"],
+        augmentation=stage2_cfg.get("augmentation"),
+        aug_preview=stage2_cfg.get("aug_preview"),
+    )
+
+    print("[STEP 15] 완료")
 
 # =========================
 # MAIN
@@ -342,7 +410,7 @@ def main():
         type=str,
         default="all",
         choices=["all", "preprocess", "stage1", "stage2", "predict",
-                 "1", "2", "3", "4", "5", "6", "7", "8"],
+                 "0", "1", "2", "3", "4", "5", "6", "7", "11", "12", "13", "14", "15"],
     )
     args = parser.parse_args()
 
@@ -350,31 +418,31 @@ def main():
     paths = build_paths(cfg)
 
     if args.step == "all":
+        step_0_predict(cfg, paths)
         step_1_build_master(cfg, paths)
         step_2_make_split(cfg, paths)
         step_3_build_yolo_stage1_dataset(cfg, paths)
         step_4_train_stage1_detector(cfg, paths)
         step_5_build_stage2_crop_dataset(cfg, paths)
-        step_6_make_stage2_fulltrain_csv(cfg, paths)
-        step_7_train_stage2_classifier(cfg, paths)
-        step_8_predict(cfg, paths)
+        step_6_train_stage2_classifier(cfg, paths)
 
     elif args.step == "preprocess":
         step_1_build_master(cfg, paths)
         step_2_make_split(cfg, paths)
         step_3_build_yolo_stage1_dataset(cfg, paths)
         step_5_build_stage2_crop_dataset(cfg, paths)
-        step_6_make_stage2_fulltrain_csv(cfg, paths)
 
     elif args.step == "stage1":
         step_4_train_stage1_detector(cfg, paths)
 
     elif args.step == "stage2":
-        step_7_train_stage2_classifier(cfg, paths)
+        step_6_train_stage2_classifier(cfg, paths)
 
     elif args.step == "predict":
-        step_8_predict(cfg, paths)
+        step_0_predict(cfg, paths)
 
+    elif args.step == "0":
+        step_0_predict(cfg, paths)
     elif args.step == "1":
         step_1_build_master(cfg, paths)
     elif args.step == "2":
@@ -386,11 +454,24 @@ def main():
     elif args.step == "5":
         step_5_build_stage2_crop_dataset(cfg, paths)
     elif args.step == "6":
-        step_6_make_stage2_fulltrain_csv(cfg, paths)
+        step_6_train_stage2_classifier(cfg, paths)
     elif args.step == "7":
-        step_7_train_stage2_classifier(cfg, paths)
-    elif args.step == "8":
-        step_8_predict(cfg, paths)
+        step_7_make_stage2_fulltrain_csv(cfg, paths)(cfg, paths)
+    elif args.step == "11":
+        print("[Full Train]")
+        step_1_build_master(cfg, paths)(cfg, paths)
+    elif args.step == "12":
+        print("[Full Train]")
+        step_12_build_yolo_stage1_full_dataset(cfg, paths)
+    elif args.step == "13":
+        print("[Full Train]")
+        step_4_train_stage1_detector(cfg, paths)
+    elif args.step == "14":
+        print("[Full Train]")
+        step_14_build_stage2_crop_full_dataset(cfg, paths)
+    elif args.step == "15":
+        print("[Full Train]")
+        step_15_train_stage2_classifier_fulltrain(cfg, paths)
 
 
 if __name__ == "__main__":

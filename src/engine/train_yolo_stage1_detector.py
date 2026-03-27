@@ -95,12 +95,6 @@ def train_yolo_stage1_detector(
     project_dir.mkdir(parents=True, exist_ok=True)
 
     # W&B metric logging 활성화
-    """
-        Ultralytics 내부에서 자동으로 wandb run 생성
-        그래서 project 이름을 직접 못 넣음
-        대신 환경변수로 override 해야 함
-    """
-
     wandb.init(project=wandb_project, name=wandb_run_name, job_type="training")
 
     model = YOLO(model_name)
