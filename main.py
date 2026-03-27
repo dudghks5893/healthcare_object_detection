@@ -59,6 +59,7 @@ from src.utils import load_config
 from src.preprocessing.build_master_table import build_master_table
 from src.preprocessing.v2_build_master_table import build_v2_master_table
 from src.preprocessing.make_split import make_split
+from src.preprocessing.make_split_by_class import make_split_by_class
 from src.preprocessing.build_yolo_stage1_dataset import build_yolo_stage1_dataset
 from src.preprocessing.v2_build_yolo_stage1_dataset import build_v2_yolo_stage1_dataset
 from src.preprocessing.v2_build_yolo_stage1_dataset_fulltrain import build_v2_yolo_stage1_dataset_fulltrain
@@ -388,8 +389,8 @@ def step_5_build_stage2_crop_dataset(cfg, paths):
         )
     else:
         print(f"version: {version}")
-        train_csv = paths["train_csv"] or paths["stage2_train_csv"]
-        val_csv = paths["val_csv"] or paths["stage2_val_csv"]
+        train_csv = paths["train_csv"] or paths["stage2_split_train_csv"]
+        val_csv = paths["val_csv"] or paths["stage2_split_val_csv"]
         raw_img_dir = paths["train_img_dir"] or paths["stage2_train_img_dir"]
         build_v2_stage2_crop_dataset(
             train_csv=train_csv,
