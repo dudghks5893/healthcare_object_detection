@@ -21,7 +21,7 @@ python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --s
 python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --step predict
 
 6. 개별 단계 실행
-python main.py --config configs/yolo11s_resnet50_tr_ep_10_full_v2.yaml --step 1
+python main.py --config configs/yolo11s_resnet50_tr_ep_20_v3.yaml --step 1
 ...
 python main.py --config configs/yolo11n_resnet18_v1.yaml --step 8
 
@@ -61,11 +61,11 @@ from src.preprocessing.v2_build_master_table import build_v2_master_table
 from src.preprocessing.make_split import make_split
 from src.preprocessing.build_yolo_stage1_dataset import build_yolo_stage1_dataset
 from src.preprocessing.v2_build_yolo_stage1_dataset import build_v2_yolo_stage1_dataset
-from src.preprocessing.v2_build_yolo_stage1_dataset_fulltrain import v2_build_yolo_stage1_dataset_fulltrain
+from src.preprocessing.v2_build_yolo_stage1_dataset_fulltrain import build_v2_yolo_stage1_dataset_fulltrain
 from src.engine.train_yolo_stage1_detector import train_yolo_stage1_detector
 from src.preprocessing.build_stage2_crop_dataset import build_stage2_crop_dataset
 from src.preprocessing.v2_build_stage2_crop_dataset import build_v2_stage2_crop_dataset
-from src.preprocessing.v2_build_stage2_crop_dataset_fulltrain import v2_build_stage2_crop_dataset_fulltrain
+from src.preprocessing.v2_build_stage2_crop_dataset_fulltrain import build_v2_stage2_crop_dataset_fulltrain
 from src.preprocessing.make_stage2_fulltrain_csv import make_stage2_fulltrain_csv
 from src.engine.train_stage2_classifier import train_stage2_classifier
 from src.engine.train_stage2_classifier_fulltrain import train_stage2_classifier_fulltrain
@@ -334,14 +334,14 @@ def step_12_build_yolo_stage1_full_dataset(cfg, paths):
     version = cfg["version"]
     if version == "v1":
         print(f"version: {version}")
-        v2_build_yolo_stage1_dataset_fulltrain(
+        build_v2_yolo_stage1_dataset_fulltrain(
             master_csv=paths["master_csv"],
             raw_img_dir=paths["train_img_dir"],
             save_root=paths["stage1_dataset_dir"],
         )
     else:
         print(f"version: {version}")
-        v2_build_yolo_stage1_dataset_fulltrain(
+        build_v2_yolo_stage1_dataset_fulltrain(
             master_csv=paths["master_csv"],
             raw_img_dir=paths["train_img_dir"],
             save_root=paths["stage1_dataset_dir"],
@@ -355,7 +355,7 @@ def step_14_build_stage2_crop_full_dataset(cfg, paths):
     version = cfg["version"]
     if version == "v1":
         print(f"version: {version}")
-        v2_build_stage2_crop_dataset_fulltrain(
+        build_v2_stage2_crop_dataset_fulltrain(
             master_csv=paths["master_csv"],
             raw_img_dir=paths["train_img_dir"],
             save_root=paths["stage1_dataset_dir"],
@@ -363,7 +363,7 @@ def step_14_build_stage2_crop_full_dataset(cfg, paths):
         )
     else:
         print(f"version: {version}")
-        v2_build_stage2_crop_dataset_fulltrain(
+        build_v2_stage2_crop_dataset_fulltrain(
             master_csv=paths["master_csv"],
             raw_img_dir=paths["train_img_dir"],
             save_root=paths["stage1_dataset_dir"],
