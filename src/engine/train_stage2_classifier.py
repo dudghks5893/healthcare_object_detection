@@ -25,6 +25,8 @@ from src.utils import (
     set_fine_tuning,
     set_seed,
     EarlyStopping,
+    get_calculate_classification_reports,
+    get_calculate_metrics
 )
 
 
@@ -187,6 +189,9 @@ def run_one_epoch(model, loader, criterion, optimizer, device, train: bool = Tru
     correct = 0
     total = 0
 
+    all_preds = []
+    all_targets = []
+
     for images, targets in loader:
         images = images.to(device)
         targets = targets.to(device)
@@ -202,14 +207,19 @@ def run_one_epoch(model, loader, criterion, optimizer, device, train: bool = Tru
                 loss.backward()
                 optimizer.step()
 
-        running_loss += loss.item() * images.size(0)
         preds = logits.argmax(dim=1)
+
+        running_loss += loss.item() * images.size(0)
         correct += (preds == targets).sum().item()
         total += targets.size(0)
 
+        # 추가
+        all_preds.extend(preds.cpu().tolist())
+        all_targets.extend(targets.cpu().tolist())
+
     epoch_loss = running_loss / total
     epoch_acc = correct / total
-    return epoch_loss, epoch_acc
+    return epoch_loss, epoch_acc, all_targets, all_preds
 
 
 def train_stage2_classifier(
@@ -273,40 +283,19 @@ def train_stage2_classifier(
 
     set_fine_tuning(model, mode="full")
 
-    # df = pd.read_csv(train_csv)
+    df = pd.read_csv(train_csv)
 
-    # raw_counts = df["class_id"].value_counts().to_dict()
+    raw_counts = df["class_id"].value_counts().to_dict()
 
-    # weights = torch.ones(num_classes, dtype=torch.float)
+    class_weights = torch.ones(num_classes, dtype=torch.float)
 
-    # for class_name, idx in class_to_idx.items():
-    #     count = raw_counts[int(class_name)]
-    #     weights[idx] = len(df) / count
+    for class_name, idx in class_to_idx.items():
+        count = raw_counts[int(class_name)]
+        class_weights[idx] = len(df) / count
 
-
-    dist_df = pd.read_csv(
-        "data/processed/v1/train_class_distribution.csv"
-    )
-    count_dict = dict(
-        zip(
-            dist_df["class_id"],
-            dist_df["count"]
-        )
-    )
-    total = sum(count_dict.values())
-
-    class_weights = torch.ones(
-        num_classes,
-        dtype=torch.float
-    )
-    for class_id, idx in class_to_idx.items():
-
-        count = count_dict[int(class_id)]
-
-        class_weights[idx] = total / count
 
     # optional (안정화)
-    # class_weights = class_weights / class_weights.mean()
+    class_weights = class_weights / class_weights.mean()
 
     # optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
     # criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
@@ -359,7 +348,8 @@ def train_stage2_classifier(
         best_state = None
 
         for epoch in range(1, epochs + 1):
-            train_loss, train_acc = run_one_epoch(
+            # train 학습
+            train_loss, train_acc, train_y, train_pred = run_one_epoch(
                 model=model,
                 loader=train_loader,
                 criterion=criterion,
@@ -367,8 +357,13 @@ def train_stage2_classifier(
                 device=device,
                 train=True,
             )
+            train_acc_m, train_recall, train_f1 = get_calculate_metrics(
+                train_y,
+                train_pred,
+            )
 
-            val_loss, val_acc = run_one_epoch(
+            # val 검증
+            val_loss, val_acc, val_y, val_pred = run_one_epoch(
                 model=model,
                 loader=val_loader,
                 criterion=criterion,
@@ -376,20 +371,33 @@ def train_stage2_classifier(
                 device=device,
                 train=False,
             )
+            val_acc_m, val_recall, val_f1 = get_calculate_metrics(
+                val_y,
+                val_pred,
+            )
 
             print(
                 f"[Epoch {epoch:02d}/{epochs}] "
-                f"train_loss={train_loss:.4f} train_acc={train_acc:.4f} "
-                f"val_loss={val_loss:.4f} val_acc={val_acc:.4f}"
+                f"train_loss={train_loss:.4f} "
+                f"train_acc={train_acc_m:.4f} "
+                f"train_f1={train_f1:.4f} "
+                f"val_loss={val_loss:.4f} "
+                f"val_acc={val_acc_m:.4f} "
+                f"val_f1={val_f1:.4f}"
             )
 
             wandb.log({
                 "epoch": epoch,
+
                 "train/loss": train_loss,
-                "train/acc": train_acc,
+                "train/acc": train_acc_m,
+                "train/recall": train_recall,
+                "train/f1": train_f1,
+
                 "val/loss": val_loss,
-                "val/acc": val_acc,
-                "lr": optimizer.param_groups[0]["lr"],
+                "val/acc": val_acc_m,
+                "val/recall": val_recall,
+                "val/f1": val_f1,
             })
 
             if val_loss < best_val_loss:

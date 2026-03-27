@@ -102,6 +102,8 @@ def load_classifier(
 @torch.no_grad()
 def classify_crop(crop_img, classifier, transform, device, idx_to_class):
     x = transform(crop_img).unsqueeze(0).to(device)
+
+    # Stage2 Classification 예측
     logits = classifier(x)
     probs = F.softmax(logits, dim=1)
 
@@ -230,6 +232,7 @@ def predict_2stage(
 
         image_predictions = []
 
+        # Stage1 Detection 예측
         results = detector.predict(
             source=str(img_path),
             imgsz=det_imgsz,
@@ -277,7 +280,8 @@ def predict_2stage(
             bbox_y = int(round(y1))
             bbox_w = int(round(x2 - x1))
             bbox_h = int(round(y2 - y1))
-
+            
+            # 최종 score
             score = float(det_score * cls_score)
 
             rows.append({
