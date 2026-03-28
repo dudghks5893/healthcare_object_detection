@@ -1,10 +1,10 @@
 from pathlib import Path
 import json
 import re
-import random
+from collections import defaultdict
 
 import pandas as pd
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 import torch
 import torch.nn.functional as F
@@ -28,11 +28,14 @@ from src.models import ResNetClassifierModel
     2. bbox 영역 crop
     3. classifier로 category_id 예측
     4. 대회 제출 형식 CSV 생성
-    5. 예측 결과 이미지 10장 저장
+    5. 예측 결과 이미지 저장
+       - 전체 예측 이미지 일부 저장
+       - 클래스별 n장씩 저장
 
     [결과]
     outputs/submission/v1/predict_2stage.csv
     outputs/predict/v1/*.png
+    outputs/predict/v1/by_class/class_xxxxx/*.png
 """
 
 TEST_IMG_DIR = Path("data/raw/v1/test_images")
@@ -50,7 +53,11 @@ DET_IMGSZ = 960
 DET_CONF = 0.25
 DET_IOU = 0.50
 CROP_MARGIN_RATIO = 0.10
-SAVE_VIS_LIMIT = 10
+
+SAVE_VIS_LIMIT = 10         # 전체 예측 이미지 저장 개수
+SAVE_VIS_PER_CLASS = 5      # 클래스별 저장 개수
+VIS_FONT_SIZE = 28          # bbox 텍스트 크기
+VIS_LINE_WIDTH = 4          # bbox 선 두께
 
 
 def load_json(path: Path):
@@ -103,7 +110,6 @@ def load_classifier(
 def classify_crop(crop_img, classifier, transform, device, idx_to_class):
     x = transform(crop_img).unsqueeze(0).to(device)
 
-    # Stage2 Classification 예측
     logits = classifier(x)
     probs = F.softmax(logits, dim=1)
 
@@ -143,34 +149,129 @@ def extract_image_id(file_name: str) -> int:
     return int(numbers[0])
 
 
-def draw_predictions(image, predictions):
+def load_font(font_size: int):
     """
-        predictions: list of dict
-        {
-            "bbox": (x, y, w, h),
-            "category_id": int,
-            "score": float
-        }
+    사용 가능한 truetype 폰트를 우선 사용하고,
+    없으면 기본 폰트로 fallback
+    """
+    candidate_fonts = [
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Helvetica.ttc",
+        "/Library/Fonts/Arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+
+    for font_path in candidate_fonts:
+        if Path(font_path).exists():
+            try:
+                return ImageFont.truetype(font_path, font_size)
+            except Exception:
+                pass
+
+    return ImageFont.load_default()
+
+
+def get_text_box(draw, text, font, x, y, padding=4):
+    left, top, right, bottom = draw.textbbox((x, y), text, font=font)
+    return (
+        left - padding,
+        top - padding,
+        right + padding,
+        bottom + padding,
+    )
+
+
+def generate_class_color(class_id: int) -> tuple[int, int, int]:
+    """
+    class_id가 같으면 항상 같은 색을 반환
+    너무 어둡거나 너무 밝지 않도록 범위를 조정
+    """
+    r = (class_id * 37) % 180 + 50
+    g = (class_id * 67) % 180 + 50
+    b = (class_id * 97) % 180 + 50
+    return (r, g, b)
+
+
+def draw_predictions(
+    image,
+    predictions,
+    class_color_map: dict[int, tuple[int, int, int]],
+    font_size: int = 28,
+    line_width: int = 4,
+):
+    """
+    predictions: list of dict
+    {
+        "bbox": (x, y, w, h),
+        "category_id": int,
+        "score": float
+    }
     """
     draw = ImageDraw.Draw(image)
+    font = load_font(font_size)
 
     for pred in predictions:
         x, y, w, h = pred["bbox"]
-        cls_id = pred["category_id"]
+        cls_id = int(pred["category_id"])
         score = pred["score"]
 
         x2 = x + w
         y2 = y + h
 
-        color = tuple(random.randint(0, 255) for _ in range(3))
+        color = class_color_map.get(cls_id, generate_class_color(cls_id))
 
-        draw.rectangle([x, y, x2, y2], outline=color, width=3)
+        draw.rectangle([x, y, x2, y2], outline=color, width=line_width)
+
         text = f"{cls_id} ({score:.2f})"
+        text_x = x
+        text_y = max(0, y - font_size - 8)
 
-        text_y = max(0, y - 14)
-        draw.text((x, text_y), text, fill=color)
+        bg_box = get_text_box(draw, text, font, text_x, text_y, padding=4)
+        draw.rectangle(bg_box, fill=color)
+        draw.text((text_x, text_y), text, fill="white", font=font)
 
     return image
+
+
+def save_classwise_visualizations(
+    image: Image.Image,
+    image_predictions: list[dict],
+    file_name: str,
+    predict_vis_dir: Path,
+    class_vis_counter: dict,
+    save_vis_per_class: int,
+    font_size: int,
+    line_width: int,
+    class_color_map: dict[int, tuple[int, int, int]],
+):
+    """
+    각 클래스별로 n개씩 시각화 저장
+    """
+    class_ids_in_image = sorted({pred["category_id"] for pred in image_predictions})
+
+    for class_id in class_ids_in_image:
+        if class_vis_counter[class_id] >= save_vis_per_class:
+            continue
+
+        class_preds = [pred for pred in image_predictions if pred["category_id"] == class_id]
+
+        vis_img = image.copy()
+        vis_img = draw_predictions(
+            vis_img,
+            class_preds,
+            class_color_map=class_color_map,
+            font_size=font_size,
+            line_width=line_width,
+        )
+
+        class_dir = predict_vis_dir / f"class_{class_id}"
+        class_dir.mkdir(parents=True, exist_ok=True)
+
+        save_index = class_vis_counter[class_id] + 1
+        save_path = class_dir / f"{Path(file_name).stem}_class{class_id}_{save_index:03d}.png"
+        vis_img.save(save_path)
+
+        class_vis_counter[class_id] += 1
 
 
 def predict_2stage(
@@ -185,6 +286,9 @@ def predict_2stage(
     det_iou: float = DET_IOU,
     crop_margin_ratio: float = CROP_MARGIN_RATIO,
     save_vis_limit: int = SAVE_VIS_LIMIT,
+    save_vis_per_class: int = SAVE_VIS_PER_CLASS,
+    vis_font_size: int = VIS_FONT_SIZE,
+    vis_line_width: int = VIS_LINE_WIDTH,
 ):
     save_csv.parent.mkdir(parents=True, exist_ok=True)
     predict_vis_dir.mkdir(parents=True, exist_ok=True)
@@ -222,6 +326,8 @@ def predict_2stage(
     rows = []
     annotation_id = 1
     saved_vis_count = 0
+    class_vis_counter = defaultdict(int)
+    class_color_map = {}
 
     for img_path in image_paths:
         file_name = img_path.name
@@ -232,7 +338,6 @@ def predict_2stage(
 
         image_predictions = []
 
-        # Stage1 Detection 예측
         results = detector.predict(
             source=str(img_path),
             imgsz=det_imgsz,
@@ -276,12 +381,14 @@ def predict_2stage(
                 idx_to_class=idx_to_class,
             )
 
+            if category_id not in class_color_map:
+                class_color_map[category_id] = generate_class_color(category_id)
+
             bbox_x = int(round(x1))
             bbox_y = int(round(y1))
             bbox_w = int(round(x2 - x1))
             bbox_h = int(round(y2 - y1))
-            
-            # 최종 score
+
             score = float(det_score * cls_score)
 
             rows.append({
@@ -303,14 +410,34 @@ def predict_2stage(
 
             annotation_id += 1
 
+        # 전체 예측 이미지 일부 저장
         if saved_vis_count < save_vis_limit and len(image_predictions) > 0:
             vis_img = image.copy()
-            vis_img = draw_predictions(vis_img, image_predictions)
+            vis_img = draw_predictions(
+                vis_img,
+                image_predictions,
+                class_color_map=class_color_map,
+                font_size=vis_font_size,
+                line_width=vis_line_width,
+            )
 
             save_path = predict_vis_dir / f"{Path(file_name).stem}_pred.png"
             vis_img.save(save_path)
-
             saved_vis_count += 1
+
+        # 클래스별 n장 저장
+        if len(image_predictions) > 0:
+            save_classwise_visualizations(
+                image=image,
+                image_predictions=image_predictions,
+                file_name=file_name,
+                predict_vis_dir=predict_vis_dir / "by_class",
+                class_vis_counter=class_vis_counter,
+                save_vis_per_class=save_vis_per_class,
+                font_size=vis_font_size,
+                line_width=vis_line_width,
+                class_color_map=class_color_map,
+            )
 
     submission_df = pd.DataFrame(rows, columns=[
         "annotation_id",
@@ -329,6 +456,9 @@ def predict_2stage(
     print(f"CSV: {save_csv}")
     print(f"시각화 이미지: {predict_vis_dir}")
     print(f"총 예측 객체 수: {len(submission_df)}")
+    print(f"전체 시각화 저장 개수 제한: {save_vis_limit}")
+    print(f"클래스별 저장 개수 제한: {save_vis_per_class}")
+
     if len(submission_df) > 0:
         print(submission_df.head())
 
@@ -353,6 +483,9 @@ def main():
         det_iou=DET_IOU,
         crop_margin_ratio=CROP_MARGIN_RATIO,
         save_vis_limit=SAVE_VIS_LIMIT,
+        save_vis_per_class=SAVE_VIS_PER_CLASS,
+        vis_font_size=VIS_FONT_SIZE,
+        vis_line_width=VIS_LINE_WIDTH,
     )
 
     print("\n추론 완료")

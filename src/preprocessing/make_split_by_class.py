@@ -34,8 +34,8 @@ from sklearn.model_selection import train_test_split
 """
 
 
-MASTER_CSV = Path("data/processed/v3/stage2/master_annotations.csv")
-SAVE_DIR = Path("data/processed/v3/stage2")
+MASTER_CSV = Path("data/processed/v4/master_annotations.csv")
+SAVE_DIR = Path("data/processed/v4")
 
 VAL_SIZE = 0.2
 RANDOM_STATE = 42

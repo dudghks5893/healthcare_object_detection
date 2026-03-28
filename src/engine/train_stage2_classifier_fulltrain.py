@@ -366,10 +366,10 @@ def train_stage2_classifier_fulltrain(
         )
         class_weight_source = f"{fulltrain_csv} (computed)"
 
-    # optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
-    # criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
+    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+    # optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    # criterion = nn.CrossEntropyLoss()
 
     hparams = {
         "mode": "stage2_fulltrain",

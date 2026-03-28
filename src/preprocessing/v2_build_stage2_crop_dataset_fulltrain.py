@@ -27,12 +27,6 @@ from PIL import Image
     ├── train/
     └── metadata/
         └── fulltrain_crop_labels.csv
-
-[하는 일]
-- bbox 기준으로 알약 crop 이미지 생성
-- margin_ratio 만큼 bbox 주변 여백 추가
-- crop 이미지 저장
-- crop metadata csv 저장
 """
 
 
@@ -41,6 +35,31 @@ def clamp(value, low, high):
     value를 [low, high] 범위 안으로 제한한다.
     """
     return max(low, min(value, high))
+
+
+def normalize_image_extension(file_name: str, default_ext: str = ".png") -> str:
+    """
+    파일명의 확장자를 정규화한다.
+    지원: .jpg, .jpeg, .png
+    그 외 확장자이거나 확장자가 없으면 default_ext를 사용한다.
+    """
+    ext = Path(file_name).suffix.lower()
+
+    if ext in [".jpg", ".jpeg", ".png"]:
+        return ext
+    return default_ext
+
+
+def get_pil_save_format(ext: str) -> str:
+    """
+    확장자에 맞는 PIL 저장 포맷명을 반환한다.
+    """
+    ext = ext.lower()
+    if ext in [".jpg", ".jpeg"]:
+        return "JPEG"
+    if ext == ".png":
+        return "PNG"
+    raise ValueError(f"지원하지 않는 확장자입니다: {ext}")
 
 
 def crop_with_margin(
@@ -54,19 +73,10 @@ def crop_with_margin(
     """
     bbox 주변에 margin을 추가하여 crop한다.
 
-    Parameters
-    ----------
-    img : Image.Image
-        원본 이미지
-    x, y, w, h : float
-        COCO bbox 형식 (x_min, y_min, width, height)
-    margin_ratio : float
-        bbox 크기 대비 여백 비율
-
     Returns
     -------
-    cropped : Image.Image
-        crop된 이미지
+    cropped : Image.Image | None
+        crop된 이미지. 유효하지 않은 crop이면 None
     crop_box : tuple[int, int, int, int]
         실제 crop에 사용된 좌표 (x1, y1, x2, y2)
     """
@@ -80,8 +90,29 @@ def crop_with_margin(
     x2 = clamp(int(x + w + margin_w), 0, img_w)
     y2 = clamp(int(y + h + margin_h), 0, img_h)
 
+    # clamp 후에도 유효한 crop 영역이 아니면 skip
+    if x2 <= x1 or y2 <= y1:
+        return None, (x1, y1, x2, y2)
+
     cropped = img.crop((x1, y1, x2, y2))
     return cropped, (x1, y1, x2, y2)
+
+
+def save_cropped_image(cropped: Image.Image, save_path: Path) -> None:
+    """
+    확장자에 맞게 crop 이미지를 저장한다.
+    jpg/jpeg/png 모두 지원한다.
+    """
+    ext = save_path.suffix.lower()
+    save_format = get_pil_save_format(ext)
+
+    if save_format == "JPEG":
+        # JPEG는 alpha 지원 안 하므로 RGB로 보정
+        if cropped.mode != "RGB":
+            cropped = cropped.convert("RGB")
+        cropped.save(save_path, format="JPEG", quality=95)
+    elif save_format == "PNG":
+        cropped.save(save_path, format="PNG", compress_level=3)
 
 
 def save_fulltrain_crop_dataset(
@@ -89,18 +120,17 @@ def save_fulltrain_crop_dataset(
     raw_img_dir: Path,
     save_root: Path,
     margin_ratio: float = 0.10,
+    save_ext: str | None = None,
 ) -> pd.DataFrame:
     """
     fulltrain용 crop dataset을 생성하여 저장한다.
 
-    생성되는 구조:
-        save_root/
-            └── train/
-
-    Returns
-    -------
-    pd.DataFrame
-        crop metadata dataframe
+    Parameters
+    ----------
+    save_ext : str | None
+        저장 확장자 강제 지정.
+        예: ".png", ".jpg", ".jpeg"
+        None이면 원본 파일 확장자를 따라감.
     """
     train_dir = save_root / "train"
     train_dir.mkdir(parents=True, exist_ok=True)
@@ -109,6 +139,11 @@ def save_fulltrain_crop_dataset(
     missing_images = []
     invalid_bbox_count = 0
     saved_count = 0
+
+    if save_ext is not None:
+        save_ext = save_ext.lower()
+        if save_ext not in [".jpg", ".jpeg", ".png"]:
+            raise ValueError(f"save_ext는 .jpg, .jpeg, .png 중 하나여야 합니다. 현재값: {save_ext}")
 
     for _, row in df.iterrows():
         file_name = row["file_name"]
@@ -128,20 +163,34 @@ def save_fulltrain_crop_dataset(
             invalid_bbox_count += 1
             continue
 
-        img = Image.open(src_img_path).convert("RGB")
+        with Image.open(src_img_path) as img:
+            img = img.convert("RGB")
 
-        cropped, crop_box = crop_with_margin(
-            img=img,
-            x=x,
-            y=y,
-            w=w,
-            h=h,
-            margin_ratio=margin_ratio,
-        )
+            cropped, crop_box = crop_with_margin(
+                img=img,
+                x=x,
+                y=y,
+                w=w,
+                h=h,
+                margin_ratio=margin_ratio,
+            )
 
-        crop_file_name = f"{Path(file_name).stem}_ann{int(row['ann_id'])}.jpg"
-        crop_path = train_dir / crop_file_name
-        cropped.save(crop_path, quality=95)
+            if cropped is None:
+                invalid_bbox_count += 1
+                print(
+                    f"[skip] invalid crop "
+                    f"| file={file_name} "
+                    f"| ann_id={row['ann_id']} "
+                    f"| bbox=({x}, {y}, {w}, {h}) "
+                    f"| crop_box={crop_box}"
+                )
+                continue
+
+            output_ext = save_ext if save_ext is not None else normalize_image_extension(file_name, default_ext=".png")
+            crop_file_name = f"{Path(file_name).stem}_ann{int(row['ann_id'])}{output_ext}"
+            crop_path = train_dir / crop_file_name
+
+            save_cropped_image(cropped, crop_path)
 
         x1, y1, x2, y2 = crop_box
 
@@ -191,6 +240,7 @@ def build_v2_stage2_crop_dataset_fulltrain(
     raw_img_dir: Path,
     save_root: Path,
     margin_ratio: float = 0.10,
+    save_ext: str | None = None,
 ) -> None:
     """
     v2 master_annotations.csv를 기반으로
@@ -198,14 +248,10 @@ def build_v2_stage2_crop_dataset_fulltrain(
 
     Parameters
     ----------
-    master_csv : Path
-        v2 master_annotations.csv 경로
-    raw_img_dir : Path
-        원본 이미지 폴더 경로
-    save_root : Path
-        crop dataset 저장 루트 경로
-    margin_ratio : float
-        bbox 주변 여백 비율
+    save_ext : str | None
+        crop 저장 확장자.
+        None이면 원본 확장자를 따라감.
+        예: ".png", ".jpg", ".jpeg"
     """
     if not master_csv.exists():
         raise FileNotFoundError(f"master csv가 없습니다: {master_csv}")
@@ -247,18 +293,20 @@ def build_v2_stage2_crop_dataset_fulltrain(
     print(f"전체 이미지 수: {df['file_name'].nunique()}")
     print(f"전체 class 수: {df['class_id'].nunique()}")
     print(f"margin_ratio: {margin_ratio}")
+    print(f"save_ext: {save_ext if save_ext is not None else '원본 확장자 유지'}")
 
     crop_df = save_fulltrain_crop_dataset(
         df=df,
         raw_img_dir=raw_img_dir,
         save_root=save_root,
         margin_ratio=margin_ratio,
+        save_ext=save_ext,
     )
 
     metadata_dir = save_root / "metadata"
     metadata_dir.mkdir(parents=True, exist_ok=True)
 
-    metadata_csv_path = metadata_dir / "fulltrain_crop_labels.csv"
+    metadata_csv_path = metadata_dir / "train_crop_labels.csv"
     crop_df.to_csv(metadata_csv_path, index=False, encoding="utf-8-sig")
 
     print("\n==== 저장 완료 ====")
@@ -266,11 +314,16 @@ def build_v2_stage2_crop_dataset_fulltrain(
 
     print("\n==== 최종 검증 ====")
     print(f"crop 수: {len(crop_df)}")
+
+    if crop_df.empty:
+        print("class 수: 0")
+        print("[경고] 저장된 crop이 없습니다.")
+        return
+
     print(f"class 수: {crop_df['class_id'].nunique()}")
 
-    if not crop_df.empty:
-        print("\n==== 샘플 metadata ====")
-        print(crop_df.head(3).to_string(index=False))
+    print("\n==== 샘플 metadata ====")
+    print(crop_df.head(3).to_string(index=False))
 
 
 def main():
@@ -283,6 +336,9 @@ def main():
         raw_img_dir=raw_img_dir,
         save_root=save_root,
         margin_ratio=0.10,
+        save_ext=None,   # None이면 원본 확장자 유지
+        # save_ext=".png",   # 전부 png로 저장하고 싶으면 이렇게
+        # save_ext=".jpg",   # 전부 jpg로 저장하고 싶으면 이렇게
     )
 
 
