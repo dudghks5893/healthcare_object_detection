@@ -1,8 +1,10 @@
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
+
 from pathlib import Path
 import json
 import random
+import time
 
 import pandas as pd
 import torch
@@ -13,6 +15,7 @@ from PIL import Image
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.utils import save_image
+from tqdm.auto import tqdm
 
 from src.datasets import PillCropDataset
 from src.datasets.stage2_classifier_transforms import (
@@ -187,22 +190,44 @@ def build_dataloader(
     return dataset, loader
 
 
-def run_one_epoch(model, loader, criterion, optimizer, device, train: bool = True):
+def run_one_epoch(
+    model,
+    loader,
+    criterion,
+    optimizer,
+    device,
+    epoch: int,
+    total_epochs: int,
+    train: bool = True,
+):
     """
     train=True면 학습, False면 평가
+    tqdm progress bar로 batch 진행 시간 표시
     """
     if train:
         model.train()
+        phase = "train"
     else:
         model.eval()
+        phase = "eval"
 
     running_loss = 0.0
     correct = 0
     total = 0
 
-    for images, targets in loader:
-        images = images.to(device)
-        targets = targets.to(device)
+    start_time = time.time()
+
+    pbar = tqdm(
+        loader,
+        total=len(loader),
+        desc=f"[{phase}] Epoch {epoch:02d}/{total_epochs}",
+        leave=True,
+        dynamic_ncols=True,
+    )
+
+    for images, targets in pbar:
+        images = images.to(device, non_blocking=True)
+        targets = targets.to(device, non_blocking=True)
 
         if train:
             optimizer.zero_grad()
@@ -220,9 +245,20 @@ def run_one_epoch(model, loader, criterion, optimizer, device, train: bool = Tru
         correct += (preds == targets).sum().item()
         total += targets.size(0)
 
+        avg_loss = running_loss / total
+        avg_acc = correct / total
+
+        pbar.set_postfix(
+            loss=f"{avg_loss:.4f}",
+            acc=f"{avg_acc:.4f}",
+            lr=f"{optimizer.param_groups[0]['lr']:.2e}" if train else "-",
+        )
+
     epoch_loss = running_loss / total
     epoch_acc = correct / total
-    return epoch_loss, epoch_acc
+    epoch_time = time.time() - start_time
+
+    return epoch_loss, epoch_acc, epoch_time
 
 
 def build_class_weights_from_distribution(
@@ -411,28 +447,36 @@ def train_stage2_classifier_fulltrain(
             seed=seed,
         )
 
+        total_train_start = time.time()
+
         for epoch in range(1, epochs + 1):
-            train_loss, train_acc = run_one_epoch(
+            train_loss, train_acc, epoch_time = run_one_epoch(
                 model=model,
                 loader=train_loader,
                 criterion=criterion,
                 optimizer=optimizer,
                 device=device,
+                epoch=epoch,
+                total_epochs=epochs,
                 train=True,
             )
 
             print(
                 f"[Epoch {epoch:02d}/{epochs}] "
                 f"train_loss={train_loss:.4f} "
-                f"train_acc={train_acc:.4f}"
+                f"train_acc={train_acc:.4f} "
+                f"epoch_time={epoch_time:.1f}s"
             )
 
             wandb.log({
                 "epoch": epoch,
                 "train/loss": train_loss,
                 "train/acc": train_acc,
+                "train/epoch_time_sec": epoch_time,
                 "lr": optimizer.param_groups[0]["lr"],
             })
+
+        total_train_time = time.time() - total_train_start
 
         best_path = save_dir / "best.pt"
         last_path = save_dir / "last.pt"
@@ -474,8 +518,10 @@ def train_stage2_classifier_fulltrain(
         run.summary["class_to_idx_path"] = str(class_to_idx_path)
         run.summary["idx_to_class_path"] = str(idx_to_class_path)
         run.summary["hparams_path"] = str(hparams_path)
+        run.summary["total_train_time_sec"] = total_train_time
 
         print("\n학습 완료")
+        print(f"총 학습 시간: {total_train_time:.1f}s")
         print(f"Saved best model to: {best_path}")
         print(f"Saved last model to: {last_path}")
         print(f"Saved class_to_idx to: {class_to_idx_path}")

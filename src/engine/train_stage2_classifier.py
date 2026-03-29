@@ -1,6 +1,8 @@
 from pathlib import Path
 import json
 import random
+from tqdm.auto import tqdm
+import time
 
 import pandas as pd
 import torch
@@ -179,11 +181,30 @@ def build_dataloader(
     return dataset, loader
 
 
-def run_one_epoch(model, loader, criterion, optimizer, device, train: bool = True):
+def run_one_epoch(
+    model,
+    loader,
+    criterion,
+    optimizer,
+    device,
+    epoch: int,
+    total_epochs: int,
+    train: bool = True,
+):
     if train:
         model.train()
+        iterator = tqdm(
+            loader,
+            total=len(loader),
+            desc=f"[train] Epoch {epoch:02d}/{total_epochs}",
+            dynamic_ncols=True,
+            leave=True,
+        )
+        start_time = time.time()
+
     else:
         model.eval()
+        iterator = loader
 
     running_loss = 0.0
     correct = 0
@@ -192,9 +213,9 @@ def run_one_epoch(model, loader, criterion, optimizer, device, train: bool = Tru
     all_preds = []
     all_targets = []
 
-    for images, targets in loader:
-        images = images.to(device)
-        targets = targets.to(device)
+    for images, targets in iterator:
+        images = images.to(device, non_blocking=True)
+        targets = targets.to(device, non_blocking=True)
 
         if train:
             optimizer.zero_grad()
@@ -213,12 +234,26 @@ def run_one_epoch(model, loader, criterion, optimizer, device, train: bool = Tru
         correct += (preds == targets).sum().item()
         total += targets.size(0)
 
-        # 추가
         all_preds.extend(preds.cpu().tolist())
         all_targets.extend(targets.cpu().tolist())
 
+        if train:
+            avg_loss = running_loss / total
+            avg_acc = correct / total
+
+            iterator.set_postfix(
+                loss=f"{avg_loss:.4f}",
+                acc=f"{avg_acc:.4f}",
+                lr=f"{optimizer.param_groups[0]['lr']:.2e}",
+            )
+
     epoch_loss = running_loss / total
     epoch_acc = correct / total
+
+    if train:
+        epoch_time = time.time() - start_time
+        return epoch_loss, epoch_acc, all_targets, all_preds, epoch_time
+
     return epoch_loss, epoch_acc, all_targets, all_preds
 
 
@@ -349,12 +384,14 @@ def train_stage2_classifier(
 
         for epoch in range(1, epochs + 1):
             # train 학습
-            train_loss, train_acc, train_y, train_pred = run_one_epoch(
+            train_loss, train_acc, train_y, train_pred, train_time = run_one_epoch(
                 model=model,
                 loader=train_loader,
                 criterion=criterion,
                 optimizer=optimizer,
                 device=device,
+                epoch=epoch,
+                total_epochs=epochs,
                 train=True,
             )
             train_acc_m, train_recall, train_f1 = get_calculate_metrics(
@@ -381,6 +418,7 @@ def train_stage2_classifier(
                 f"train_loss={train_loss:.4f} "
                 f"train_acc={train_acc_m:.4f} "
                 f"train_f1={train_f1:.4f} "
+                f"train_time={train_time:.1f}s "
                 f"val_loss={val_loss:.4f} "
                 f"val_acc={val_acc_m:.4f} "
                 f"val_f1={val_f1:.4f}"
@@ -393,6 +431,7 @@ def train_stage2_classifier(
                 "train/acc": train_acc_m,
                 "train/recall": train_recall,
                 "train/f1": train_f1,
+                "train/epoch_time_sec": train_time,
 
                 "val/loss": val_loss,
                 "val/acc": val_acc_m,
