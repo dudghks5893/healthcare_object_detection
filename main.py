@@ -21,7 +21,7 @@ python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --s
 python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --step predict
 
 6. 개별 단계 실행
-python main.py --config configs/yolo11s_resnet50_tr_ep_20_claasweights_v4.yaml --step 1
+python main.py --config configs/yolo11s_resnet50_tr_ep_20_claasweights_deg_180_v4.yaml --step 1
 ...
 python main.py --config configs/yolo11n_resnet18_v1.yaml --step 8
 
@@ -43,9 +43,9 @@ python main.py --config configs/yolo11n_resnet18_v1.yaml --step 8
 
 [Full Train Data 기준 Step 설명]
 11. build_master_table                           → json → CSV 변환
-12. v2_build_yolo_stage1_dataset_fulltrain       → YOLO Full Train Dataset 생성 (해당 페이지에 들어가서 단일 실행 시 생성 가능)
+12. v2_build_yolo_stage1_dataset_fulltrain       → YOLO Full Train Dataset 생성
 13. train_yolo_stage1_detector                   → bbox detector 학습 (yaml에 stage1 부분에 val=false 설정 필요.)
-14. v2_build_stage2_crop_dataset_fulltrain       → Full Train Crop Dataset 이미지 생성 (해당 페이지에 들어가서 단일 실행 시 생성 가능)
+14. v2_build_stage2_crop_dataset_fulltrain       → Full Train Crop Dataset 이미지 생성
 15. stage2_classifier_fulltrain                  → 분류 모델 full train 학습
 
 -------------------------------------------
