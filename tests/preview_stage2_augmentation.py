@@ -6,6 +6,8 @@ from PIL import Image
 
 from torchvision import transforms
 from torchvision.utils import save_image
+from src.utils import RandomRotate180
+from src.utils import RandomSharpen
 
 
 """
@@ -22,11 +24,11 @@ from torchvision.utils import save_image
 # =========================
 
 CSV_PATH = Path(
-    "data/processed/v1/stage2_classifier_crop_dataset/metadata/full_train_crop_labels.csv"
+    "data/processed/v4/stage2_classifier_crop_dataset/metadata/train_crop_labels.csv"
 )
 
 SAVE_DIR = Path(
-    "data/processed/v1/stage2_classifier_crop_dataset/stage2_aug_preview"
+    "data/processed/v4/stage2_classifier_crop_dataset/stage2_aug_preview"
 )
 
 IMG_SIZE = 224
@@ -49,29 +51,63 @@ def build_preview_transform(img_size: int = 224):
     tf = transforms.Compose([
         transforms.Resize((img_size, img_size)),
 
-        # 1) 색/조명 변화 대응
+        # 1) 색/조명 변화 대응 - 너무 강하지 않게
         transforms.ColorJitter(
-            brightness=0.08,
-            contrast=0.08,
-            saturation=0.03,
+            brightness=0.06,
+            contrast=0.12,
+            saturation=0.02,
             hue=0.0,
         ),
 
-        # 2) 글자 선명도 변화 대응
-        transforms.RandomApply(
-            [transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 0.5))],
-            p=0.2,
-        ),
+        # 2) 글자/각인 디테일 보존 + 약한 선명도 변화
+        RandomSharpen(p=0.5),
 
-        # 3) 위치/크기 변화만 아주 약하게
-        transforms.RandomAffine(
-            degrees=5,
-            translate=(0.02, 0.02),
-            scale=(0.98, 1.02),
-        ),
+        # 3) 아주 약한 blur만 낮은 확률로
+        # transforms.RandomApply(
+        #     [transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 0.3))],
+        #     p=0.1,
+        # ),
+
+        # 4) 실제 촬영 오차 정도의 위치/크기 변화만 약하게
+        # transforms.RandomAffine(
+        #     degrees=0,
+        #     translate=(0.02, 0.02),
+        #     scale=(0.95, 1.05),
+        # ),
+
+        # 5) 알약 방향이 실제로 뒤집혀 나올 수 있다면 0/180만 적용
+        RandomRotate180(p=0.5),
 
         transforms.ToTensor(),
     ])
+
+
+    # tf = transforms.Compose([
+    #     transforms.Resize((img_size, img_size)),
+
+    #     # 1) 색/조명 변화 대응
+    #     transforms.ColorJitter(
+    #         brightness=0.08,
+    #         contrast=0.08,
+    #         saturation=0.03,
+    #         hue=0.0,
+    #     ),
+
+    #     # 2) 글자 선명도 변화 대응
+    #     transforms.RandomApply(
+    #         [transforms.GaussianBlur(kernel_size=11, sigma=(0.1, 2.0))],
+    #         p=0.7,
+    #     ),
+
+    #     # 3) 위치/크기 변화만 아주 약하게
+    #     transforms.RandomAffine(
+    #         degrees=180,
+    #         translate=(0.02, 0.02),
+    #         scale=(0.98, 1.02),
+    #     ),
+
+    #     transforms.ToTensor(),
+    # ])
     return tf
 
 
