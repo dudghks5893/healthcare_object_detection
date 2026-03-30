@@ -21,7 +21,7 @@ python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --s
 python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --step predict
 
 6. 개별 단계 실행
-python main.py --config configs/yolo11s_resnet50_tr_ep_20_claasweights_deg_180_v4.yaml --step 1
+python main.py --config configs/yolo11s_resnet50_tr_ep_20_claasweights_deg_180_sharpen_v4.yaml --step 1
 ...
 python main.py --config configs/yolo11n_resnet18_v1.yaml --step 8
 
@@ -209,7 +209,7 @@ def step_1_build_master(cfg, paths):
     print("\n[STEP 1] build_master_table 시작")
     version = cfg["version"]
 
-    if version == "v1" or version == "v4":
+    if version == "v1" or version == "v4" or version == "v5":
         print(f"version: {version}")
         build_master_table(
             annot_root=paths["annot_root"],
@@ -293,7 +293,7 @@ def step_2_make_split(cfg, paths):
 def step_3_build_yolo_stage1_dataset(cfg, paths):
     print("\n[STEP 3] build_yolo_stage1_dataset 시작")
     version = cfg["version"]
-    if version == "v1" or version == "v4":
+    if version == "v1" or version == "v4" or version == "v5":
         print(f"version: {version}")
         build_yolo_stage1_dataset(
             train_csv=paths["train_csv"],
@@ -376,7 +376,7 @@ def step_5_build_stage2_crop_dataset(cfg, paths):
     print("\n[STEP 5] build_stage2_crop_dataset 시작")
     version = cfg["version"]
 
-    if version == "v1" or version == "v4":
+    if version == "v1" or version == "v4" or version == "v5":
         print(f"version: {version}")
         build_stage2_crop_dataset(
             train_csv=paths["train_csv"],
@@ -443,7 +443,7 @@ def step_7_make_stage2_fulltrain_csv(cfg, paths):
 def step_12_build_yolo_stage1_full_dataset(cfg, paths):
     print("\n[STEP 12] build_yolo_stage1_dataset 시작")
     version = cfg["version"]
-    if version == "v1" or version == "v4":
+    if version == "v1" or version == "v4" or version == "v5":
         print(f"version: {version}")
         build_v2_yolo_stage1_dataset_fulltrain(
             master_csv=paths["master_csv"],
