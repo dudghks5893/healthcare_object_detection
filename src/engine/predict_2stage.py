@@ -586,6 +586,161 @@ def predict_2stage(
     }
 
 
+# -----------------------------------------------------------
+# UI / API 용: 이미지 1장만 예측하는 함수
+# app.py 에서 이 함수만 호출하면 된다
+# -----------------------------------------------------------
+@torch.no_grad()
+def predict_one_image(
+    input_image,
+    detector_weight: Path,
+    classifier_weight: Path,
+    classifier_dir: Path,
+    det_imgsz: int = DET_IMGSZ,
+    det_conf: float = DET_CONF,
+    det_iou: float = DET_IOU,
+    crop_margin_ratio: float = CROP_MARGIN_RATIO,
+    vis_font_size: int = VIS_FONT_SIZE,
+    vis_line_width: int = VIS_LINE_WIDTH,
+):
+    """
+    UI / API 용 단일 이미지 예측 함수
+
+    역할:
+    - PIL 이미지 1장을 입력받는다.
+    - Stage1 detector로 bbox를 찾는다.
+    - bbox 기준으로 crop 이미지를 만든다.
+    - crop 이미지를 Stage2 classifier에 넣어 최종 class를 예측한다.
+    - bbox와 class 정보가 그려진 결과 이미지를 반환한다.
+
+    Returns
+    -------
+    vis_img : PIL.Image
+        bbox / class / score 가 그려진 결과 이미지
+    predictions : list[dict]
+        각 bbox별 예측 결과
+    """
+
+    device = get_device()
+
+    if device.type == "cuda":
+        yolo_device = "0"
+    elif device.type == "mps":
+        yolo_device = "mps"
+    else:
+        yolo_device = "cpu"
+
+    # -----------------------------
+    # Stage1 detector 로드
+    # -----------------------------
+    detector = YOLO(str(detector_weight))
+
+    # -----------------------------
+    # Stage2 classifier 로드
+    # -----------------------------
+    classifier, idx_to_class, cls_img_size, _ = load_classifier(
+        classifier_weight=classifier_weight,
+        classifier_dir=classifier_dir,
+        device=device,
+    )
+    cls_transform = build_classifier_transform(cls_img_size)
+
+    image = input_image.convert("RGB")
+    img_w, img_h = image.size
+
+    # -----------------------------
+    # Stage1: bbox detection
+    # -----------------------------
+    results = detector.predict(
+        source=image,
+        imgsz=det_imgsz,
+        conf=det_conf,
+        iou=det_iou,
+        device=yolo_device,
+        verbose=False,
+    )
+
+    if len(results) == 0:
+        return image, []
+
+    result = results[0]
+    boxes = result.boxes
+
+    if boxes is None or len(boxes) == 0:
+        return image, []
+
+    xyxy = boxes.xyxy.cpu().numpy()
+    det_confs = boxes.conf.cpu().numpy()
+
+    predictions = []
+    class_color_map = {}
+
+    for box, det_score in zip(xyxy, det_confs):
+        # ------------------------------------------
+        # Stage1이 예측한 bbox 좌표를 꺼내는 부분
+        # ------------------------------------------
+        x1, y1, x2, y2 = box.tolist()
+
+        # ------------------------------------------
+        # bbox에 margin을 더하고 이미지 범위로 clip
+        # ------------------------------------------
+        cx1, cy1, cx2, cy2 = apply_margin_and_clip(
+            x1, y1, x2, y2,
+            img_w, img_h,
+            margin_ratio=crop_margin_ratio,
+        )
+
+        if cx2 <= cx1 or cy2 <= cy1:
+            continue
+
+        # ------------------------------------------
+        # Stage2 입력용 crop 생성
+        # Stage1 bbox 영역을 실제로 잘라낸 이미지
+        # ------------------------------------------
+        crop = image.crop((cx1, cy1, cx2, cy2))
+
+        # ------------------------------------------
+        # Stage2 classifier가 crop 이미지를 분류
+        # ------------------------------------------
+        category_id, cls_score = classify_crop(
+            crop_img=crop,
+            classifier=classifier,
+            transform=cls_transform,
+            device=device,
+            idx_to_class=idx_to_class,
+        )
+
+        if category_id not in class_color_map:
+            class_color_map[category_id] = generate_class_color(category_id)
+
+        bbox_x = int(round(x1))
+        bbox_y = int(round(y1))
+        bbox_w = int(round(x2 - x1))
+        bbox_h = int(round(y2 - y1))
+
+        # detector score 와 classifier score를 결합
+        score = float(det_score * cls_score)
+
+        predictions.append({
+            "bbox": (bbox_x, bbox_y, bbox_w, bbox_h),
+            "category_id": category_id,
+            "score": score,
+        })
+
+    vis_img = image.copy()
+
+    if len(predictions) > 0:
+        vis_img = draw_predictions(
+            vis_img,
+            predictions,
+            class_color_map=class_color_map,
+            font_size=vis_font_size,
+            line_width=vis_line_width,
+        )
+
+    return vis_img, predictions
+
+
 def main():
     output = predict_2stage(
         test_img_dir=TEST_IMG_DIR,
