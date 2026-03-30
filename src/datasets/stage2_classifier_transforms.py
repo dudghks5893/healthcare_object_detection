@@ -1,5 +1,6 @@
 from torchvision import transforms
-
+# from src.utils import RandomRotate180
+# from src.utils import RandomSharpen
 
 """
     [역할]
@@ -90,7 +91,16 @@ def build_stage2_transforms(
                 p=random_affine_cfg.get("p", 1.0),
             )
         )
-
+    
+    # # 테스트 증강 강제 적용 적용 (글자 선명도)
+    # tf_list.append(
+    #         RandomSharpen(p=0.5),
+    #     )
+    # # 테스트 증강 강제 적용 적용 (0or180 도로 기울기)
+    # tf_list.append(
+    #         RandomRotate180(p=0.5),
+    #     )
+    
     tf_list.extend([
         transforms.ToTensor(),
         normalize,

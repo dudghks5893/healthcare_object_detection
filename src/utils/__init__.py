@@ -8,6 +8,9 @@ from .calculate_map_metric import calculate_map_metric
 from .calculate_classification_acc import calculate_classification_acc
 from .calculate_classification_reports import get_calculate_classification_reports
 from .calculate_classification_reports import get_calculate_metrics
+from .custom_transforms import RandomSharpen
+from .custom_transforms import StrongSharpen
+from .custom_transforms import RandomRotate180
 
 __all__ = [
     "EarlyStopping", 
@@ -22,4 +25,7 @@ __all__ = [
     "calculate_classification_acc",
     "get_calculate_classification_reports",
     "get_calculate_metrics",
+    "RandomSharpen",
+    "StrongSharpen",
+    "RandomRotate180",
 ]
