@@ -23,12 +23,16 @@ def build_master_table(
     train_img_dir: Path,
     save_path: Path,
 ) -> pd.DataFrame:
+
     json_paths = list(annot_root.rglob("*.json"))
     train_image_paths = list(train_img_dir.rglob("*.png"))
 
     rows = []
 
+    invalid_bbox_count = 0
+
     for json_path in json_paths:
+
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
@@ -45,23 +49,58 @@ def build_master_table(
         cat_map = {c["id"]: c["name"] for c in categories}
 
         for ann in annotations:
-            bbox = ann["bbox"]  # [x, y, w, h]
+
+            bbox = ann.get("bbox")
+
+            # -----------------------------
+            # bbox validation (핵심)
+            # -----------------------------
+            if not isinstance(bbox, list) or len(bbox) != 4:
+                invalid_bbox_count += 1
+
+                print(
+                    f"[WARN] invalid bbox detected | "
+                    f"json={json_path.name} "
+                    f"ann_id={ann.get('id')} "
+                    f"bbox={bbox}"
+                )
+
+                continue
+
+            x, y, w, h = bbox
+
+            # 추가 안전 체크
+            if w <= 0 or h <= 0:
+                invalid_bbox_count += 1
+
+                print(
+                    f"[WARN] zero or negative bbox | "
+                    f"json={json_path.name} "
+                    f"ann_id={ann.get('id')} "
+                    f"bbox={bbox}"
+                )
+
+                continue
 
             row = {
                 "json_path": str(json_path),
                 "file_name": img["file_name"],
                 "width": img["width"],
                 "height": img["height"],
-                "bbox_x": bbox[0],
-                "bbox_y": bbox[1],
-                "bbox_w": bbox[2],
-                "bbox_h": bbox[3],
+                "bbox_x": x,
+                "bbox_y": y,
+                "bbox_w": w,
+                "bbox_h": h,
                 "class_id": ann["category_id"],
-                "class_name": cat_map.get(ann["category_id"], "unknown"),
+                "class_name": cat_map.get(
+                    ann["category_id"],
+                    "unknown",
+                ),
                 "image_id": ann.get("image_id"),
                 "ann_id": ann.get("id"),
                 "area": ann.get("area"),
             }
+
             rows.append(row)
 
     df = pd.DataFrame(rows)
@@ -69,18 +108,13 @@ def build_master_table(
     print("\n==== 총 개수 ====")
     print(f"총 json 개수: {len(json_paths)}")
     print(f"총 Train Image 개수: {len(train_image_paths)}")
+    print(f"잘못된 bbox 개수: {invalid_bbox_count}")
 
     if df.empty:
         print("\n[경고] 생성된 DataFrame이 비어 있습니다.")
         print(f"- annotation 경로: {annot_root}")
         print(f"- image 경로: {train_img_dir}")
         return df
-
-    print("\n==== train 이미지 파일명과 일치 여부 ====")
-    sample_name = df["file_name"].iloc[0]
-    sample_path = train_img_dir / sample_name
-    print(f"샘플 Json file_name: {sample_name}")
-    print(f"이미지 폴더에 존재 여부: {sample_path.exists()}")
 
     print("\n==== Json 기본 정보 ====")
     print(f"총 행 수(객체 수): {len(df)}")
@@ -93,14 +127,16 @@ def build_master_table(
     print("bbox_w <= 0:", (df["bbox_w"] <= 0).sum())
     print("bbox_h <= 0:", (df["bbox_h"] <= 0).sum())
 
-    print("\n==== 이미지당 객체 수 ====")
-    obj_per_image = df.groupby("file_name").size().describe()
-    print(obj_per_image)
-
     save_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(save_path, index=False, encoding="utf-8-sig")
+
+    df.to_csv(
+        save_path,
+        index=False,
+        encoding="utf-8-sig",
+    )
 
     print(f"\n저장 완료: {save_path}")
+
     return df
 
 
