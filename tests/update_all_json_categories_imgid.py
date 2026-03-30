@@ -1,9 +1,71 @@
 import json
 from pathlib import Path
-
+import re
 
 VALID_IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
 
+
+def clean_filename(name: str) -> str:
+    """
+    파일명에서 `_png.rf.xxx` 또는 `_jpg.rf.xxx` 제거
+
+    예:
+    K-xxx_png.rf.ABC123.png
+    → K-xxx.png
+    """
+
+    pattern = r"_(png|jpg|jpeg)\.rf\.[^.]+"
+
+    cleaned = re.sub(pattern, "", name, flags=re.IGNORECASE)
+
+    return cleaned
+
+
+def fix_image_filenames(root_dir: Path):
+
+    image_paths = []
+
+    for ext in VALID_IMAGE_EXTS:
+        image_paths.extend(root_dir.rglob(f"*{ext}"))
+        image_paths.extend(root_dir.rglob(f"*{ext.upper()}"))
+
+    renamed_count = 0
+    skipped_count = 0
+
+    print(f"\n총 이미지 수: {len(image_paths)}")
+
+    for img_path in image_paths:
+
+        original_name = img_path.name
+        new_name = clean_filename(original_name)
+
+        if original_name == new_name:
+            skipped_count += 1
+            continue
+
+        new_path = img_path.with_name(new_name)
+
+        # 충돌 방지
+        if new_path.exists():
+            print(
+                f"[SKIP] 이미 존재함: {new_path}"
+            )
+            skipped_count += 1
+            continue
+
+        img_path.rename(new_path)
+
+        print(
+            f"[RENAME]\n"
+            f"  OLD: {original_name}\n"
+            f"  NEW: {new_name}"
+        )
+
+        renamed_count += 1
+
+    print("\n===== 결과 =====")
+    print(f"수정된 파일: {renamed_count}")
+    print(f"건너뜀: {skipped_count}")
 
 def folder_name_to_class_id(folder_name: str) -> int:
     """
@@ -275,8 +337,10 @@ def main():
     # processing_root = Path("data/raw/v4/processing")
     # train_img_dir = Path("data/raw/v4/processing_images")
 
-    processing_root = Path("data/raw/v4/train_annotations")
-    train_img_dir = Path("data/raw/v4/train_images")
+    processing_root = Path("data/raw/v5/train_annotations")
+    train_img_dir = Path("data/raw/v5/train_images")
+
+    fix_image_filenames(train_img_dir)
 
     process_all_json_folders(
         processing_root=processing_root,
