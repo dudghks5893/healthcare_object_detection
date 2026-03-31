@@ -21,7 +21,7 @@ python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --s
 python main.py --config configs/yolo11s_resnet50_transforms_epoch_20_v2.yaml --step predict
 
 6. 개별 단계 실행
-python main.py --config configs/yolo11s_resnet50_tr_ep_20_claasweights_deg_180_sharpen_v4.yaml --step 1
+python main.py --config configs/yolo11s_resnet50_tr_ep_20_policy_v6.yaml --step 1
 ...
 python main.py --config configs/yolo11n_resnet18_v1.yaml --step 8
 
@@ -188,6 +188,9 @@ def build_paths(cfg):
 # =========================
 # STEP 함수들
 # =========================
+
+legacy_versions = {"v1", "v4", "v5", "v6"}
+
 def step_0_predict(cfg, paths):
     print("\n[STEP 0] predict_2stage 시작")
     predict_2stage(
@@ -209,7 +212,7 @@ def step_1_build_master(cfg, paths):
     print("\n[STEP 1] build_master_table 시작")
     version = cfg["version"]
 
-    if version == "v1" or version == "v4" or version == "v5":
+    if version in legacy_versions:
         print(f"version: {version}")
         build_master_table(
             annot_root=paths["annot_root"],
@@ -293,7 +296,7 @@ def step_2_make_split(cfg, paths):
 def step_3_build_yolo_stage1_dataset(cfg, paths):
     print("\n[STEP 3] build_yolo_stage1_dataset 시작")
     version = cfg["version"]
-    if version == "v1" or version == "v4" or version == "v5":
+    if version in legacy_versions:
         print(f"version: {version}")
         build_yolo_stage1_dataset(
             train_csv=paths["train_csv"],
@@ -376,7 +379,7 @@ def step_5_build_stage2_crop_dataset(cfg, paths):
     print("\n[STEP 5] build_stage2_crop_dataset 시작")
     version = cfg["version"]
 
-    if version == "v1" or version == "v4" or version == "v5":
+    if version in legacy_versions:
         print(f"version: {version}")
         build_stage2_crop_dataset(
             train_csv=paths["train_csv"],
@@ -443,7 +446,7 @@ def step_7_make_stage2_fulltrain_csv(cfg, paths):
 def step_12_build_yolo_stage1_full_dataset(cfg, paths):
     print("\n[STEP 12] build_yolo_stage1_dataset 시작")
     version = cfg["version"]
-    if version == "v1" or version == "v4" or version == "v5":
+    if version in legacy_versions:
         print(f"version: {version}")
         build_v2_yolo_stage1_dataset_fulltrain(
             master_csv=paths["master_csv"],
@@ -495,7 +498,8 @@ def step_15_train_stage2_classifier_fulltrain(cfg, paths):
         seed=cfg["seed"],
         num_workers=stage2_cfg["num_workers"],
         pin_memory=stage2_cfg["pin_memory"],
-        augmentation=stage2_cfg.get("augmentation"),
+        augmentation=stage2_cfg.get("augmentation"), # augmentation (global)
+        class_policy=stage2_cfg.get("class_policy"),
         aug_preview=stage2_cfg.get("aug_preview"),
     )
 
@@ -558,10 +562,10 @@ def main():
     elif args.step == "6":
         step_6_train_stage2_classifier(cfg, paths)
     elif args.step == "7":
-        step_7_make_stage2_fulltrain_csv(cfg, paths)(cfg, paths)
+        step_7_make_stage2_fulltrain_csv(cfg, paths)
     elif args.step == "11":
         print("[Full Train]")
-        step_1_build_master(cfg, paths)(cfg, paths)
+        step_1_build_master(cfg, paths)
     elif args.step == "12":
         print("[Full Train]")
         step_12_build_yolo_stage1_full_dataset(cfg, paths)
