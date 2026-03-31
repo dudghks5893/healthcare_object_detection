@@ -19,16 +19,17 @@ class RandomSharpen:
 
 # 더 강한 샤프닝
 class StrongSharpen:
+    def __init__(self, p=0.):
+        self.p = p
 
     def __call__(self, img):
-
         return img.filter(
-            ImageFilter.UnsharpMask(
-                radius=2,
-                percent=150,
-                threshold=3
-            )
-        )
+                ImageFilter.UnsharpMask(
+                    radius=2,       # 얼마나 넓은 영역을 기준으로 선명 (작음 → 글자 가장자리만 강조)
+                    percent=150,    # 얼마나 강하게 선명하게 할지
+                    threshold=3     # 얼마나 차이가 있어야 sharpen 할지 (얼마나 차이가 있어야 sharpen 할지)
+                    )
+                )
 
 
 class RandomRotate180:
