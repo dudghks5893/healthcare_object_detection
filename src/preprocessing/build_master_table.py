@@ -33,8 +33,21 @@ def build_master_table(
 
     for json_path in json_paths:
 
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+                print("\n[ERROR] JSON decode 실패")
+                print(f"파일: {json_path}")
+                print(f"에러: {e}")
+                continue
+        except Exception as e:
+
+            print("\n[ERROR] 기타 파일 읽기 실패")
+            print(f"파일: {json_path}")
+            print(f"에러: {e}")
+
+            continue
 
         images = data.get("images", [])
         annotations = data.get("annotations", [])
