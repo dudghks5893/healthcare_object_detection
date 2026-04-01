@@ -44,19 +44,17 @@ pip install -r requirements.txt
 
 
 ## 최종보고서
+[3팀 보고서]
 https://docs.google.com/document/d/19BLcbztwyXhm-eCeI_pAnImj51zhg-cxxujMIjRYkGE/edit?tab=t.0 
 
 ## 협업일지
 [김태민]
-
 https://docs.google.com/spreadsheets/d/1hqWT1c00Dmr8VdBGJWpF5xyMW1kDDY69B_ZCtLo4nsE/edit?gid=340567033#gid=340567033 
 
 [신기성]
-
 https://blog.naver.com/ispeed0011/224236719972
 
 [채영환]
-
 https://docs.google.com/spreadsheets/d/1uV7qXYtMATnnaEeJYtF1NwZlL6OgliVMjUl2VWfYS3s/edit?usp=sharing
 
 ## 타임라인
