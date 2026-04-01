@@ -34,3 +34,6 @@ Python 3.12.10을 사용하는 것을 권장합니다.
 ```bash
 pip install -r requirements.txt
 ```
+
+## 김태민 협업일지
+https://docs.google.com/spreadsheets/d/1hqWT1c00Dmr8VdBGJWpF5xyMW1kDDY69B_ZCtLo4nsE/edit?gid=340567033#gid=340567033 
