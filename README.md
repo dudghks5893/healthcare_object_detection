@@ -49,5 +49,6 @@ https://docs.google.com/document/d/19BLcbztwyXhm-eCeI_pAnImj51zhg-cxxujMIjRYkGE/
 ##  협업일지
 [김태민]
 https://docs.google.com/spreadsheets/d/1hqWT1c00Dmr8VdBGJWpF5xyMW1kDDY69B_ZCtLo4nsE/edit?gid=340567033#gid=340567033 
+
 [신기성]
 https://blog.naver.com/ispeed0011/224236719972
