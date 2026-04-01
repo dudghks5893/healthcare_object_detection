@@ -34,6 +34,16 @@ Python 3.12.10을 사용하는 것을 권장합니다.
 ```bash
 pip install -r requirements.txt
 ```
+<img width="1179" height="944" alt="스크린샷 2026-04-01 오후 3 58 02" src="https://github.com/user-attachments/assets/a024366d-5bf8-4677-9ca9-9ed92d4ec7bc" />
+
+<img width="1074" height="603" alt="스크린샷 2026-04-01 오후 4 00 13" src="https://github.com/user-attachments/assets/f64bdd95-7bb9-41d9-b4ca-ebc411186b6d" />
+
+<img width="1262" height="549" alt="image" src="https://github.com/user-attachments/assets/b528eec0-065d-4f99-ba30-0b3191ab3a2c" />
+
+<img width="1095" height="915" alt="2026-04-01_4 04 23" src="https://github.com/user-attachments/assets/409285ea-5900-4c88-bf48-778ece809fa1" />
+
+
+
 
 ## 김태민 협업일지
 https://docs.google.com/spreadsheets/d/1hqWT1c00Dmr8VdBGJWpF5xyMW1kDDY69B_ZCtLo4nsE/edit?gid=340567033#gid=340567033 
