@@ -43,7 +43,9 @@ pip install -r requirements.txt
 <img width="1095" height="915" alt="2026-04-01_4 04 23" src="https://github.com/user-attachments/assets/409285ea-5900-4c88-bf48-778ece809fa1" />
 
 
+##최종보고서
+https://docs.google.com/document/d/19BLcbztwyXhm-eCeI_pAnImj51zhg-cxxujMIjRYkGE/edit?tab=t.0 
 
-
-## 김태민 협업일지
+##  협업일지
+[김태민]
 https://docs.google.com/spreadsheets/d/1hqWT1c00Dmr8VdBGJWpF5xyMW1kDDY69B_ZCtLo4nsE/edit?gid=340567033#gid=340567033 
