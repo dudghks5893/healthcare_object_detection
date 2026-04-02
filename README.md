@@ -17,7 +17,7 @@
 ## Development Environment
 
 - Python : **3.12.10**
-- Deep Learning Framework : PyTorch (예정)
+- Deep Learning Framework : PyTorch
 - Version Control : Git / GitHub
 
 ---
