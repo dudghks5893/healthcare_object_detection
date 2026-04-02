@@ -57,6 +57,9 @@ https://blog.naver.com/ispeed0011/224236719972
 [채영환]
 https://docs.google.com/spreadsheets/d/1uV7qXYtMATnnaEeJYtF1NwZlL6OgliVMjUl2VWfYS3s/edit?usp=sharing
 
+[김경제]
+https://shrub-weight-c16.notion.site/AI_9-_-_Daily_-2d32b0aa2cb280b1bcc5ef835c0cf3dc?source=copy_link
+
 ## 타임라인
 https://docs.google.com/spreadsheets/d/1te1K-7_0WsSPv_8NZDxoU2s1_gtKME2s/edit?usp=sharing&ouid=112188858007110237324&rtpof=true&sd=true
 
